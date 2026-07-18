@@ -45,7 +45,6 @@ export default function AdminPage() {
   }, [activeTab])
 
   const loadData = async () => {
-    setLoading(true)
     try {
       if (activeTab === 'users') {
         const response = await api.get('/users/list')
@@ -59,8 +58,6 @@ export default function AdminPage() {
       }
     } catch (error) {
       console.error('Failed to load admin data:', error)
-    } finally {
-      setLoading(false)
     }
   }
 
