@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import api from '../services/api'
@@ -33,7 +33,6 @@ export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([])
   const [images, setImages] = useState<GalleryImage[]>([])
   const [stats, setStats] = useState<any>(null)
-  const [loading, setLoading] = useState(false)
   const [bulkInput, setBulkInput] = useState('')
   const [defaultPassword, setDefaultPassword] = useState('student123')
 
@@ -89,15 +88,6 @@ export default function AdminPage() {
     } catch (error) {
       console.error('Failed to create users:', error)
       alert('创建账号失败')
-    }
-  }
-
-  const handleUpdateQuota = async (userId: number, chatQuota: number, imageQuota: number) => {
-    try {
-      await api.put(`/users/${userId}/quota`, { chat_quota: chatQuota, image_quota: imageQuota })
-      loadData()
-    } catch (error) {
-      console.error('Failed to update quota:', error)
     }
   }
 

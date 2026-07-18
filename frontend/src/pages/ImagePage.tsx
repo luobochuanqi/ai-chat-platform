@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import api from '../services/api'
@@ -96,7 +96,7 @@ export default function ImagePage() {
             <div>
               <h2 className="text-xl font-bold text-zinc-900">AI 生图</h2>
               <p className="text-sm text-zinc-500">
-                剩余额度: {user?.image_quota - user?.image_used} / {user?.image_quota} 张
+                剩余额度: {(user?.image_quota ?? 0) - (user?.image_used ?? 0)} / {user?.image_quota ?? 0} 张
               </p>
             </div>
           </div>
