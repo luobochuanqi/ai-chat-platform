@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  backend:
+    image: ghcr.io/luobochuanqi/ai-chat-platform-backend:latest
+    container_name: ai-chat-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_API_BASE=${DEEPSEEK_API_BASE}
+      - SEEDREAM_API_KEY=${SEEDREAM_API_KEY}
+      - SEEDREAM_API_BASE=${SEEDREAM_API_BASE}
+      - DATABASE_URL=sqlite:///./data/app.db
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  frontend:
+    image: ghcr.io/luobochuanqi/ai-chat-platform-frontend:latest
+    container_name: ai-chat-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
