@@ -5,7 +5,7 @@ import api from '../services/api'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
 import { Zoom } from 'yet-another-react-lightbox/plugins'
-import { CheckSquare, Square, Eye, Users, MessageSquare, ImageIcon, Heart, AlertCircle } from 'lucide-react'
+import { CheckSquare, Square, Eye, Users, MessageSquare, ImageIcon, Heart, AlertCircle, FileText, Plus, Trash2, Edit3 } from 'lucide-react'
 
 interface User {
   id: number
@@ -30,12 +30,23 @@ interface GalleryImage {
   user_nickname: string
 }
 
+interface SystemPromptItem {
+  id: number
+  name: string
+  description?: string
+  prompt: string
+  is_builtin: boolean
+  user_id?: number
+  is_active: boolean
+  created_at: string
+}
+
 type SortOption = 'newest' | 'oldest' | 'most_liked'
 
 export default function AdminPage() {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
-  const [activeTab, setActiveTab] = useState<'users' | 'images' | 'stats'>('users')
+  const [activeTab, setActiveTab] = useState<'users' | 'images' | 'stats' | 'prompts'>('users')
   const [users, setUsers] = useState<User[]>([])
   const [images, setImages] = useState<GalleryImage[]>([])
   const [stats, setStats] = useState<any>(null)
@@ -45,6 +56,14 @@ export default function AdminPage() {
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(0)
+  
+  // System prompt management
+  const [prompts, setPrompts] = useState<SystemPromptItem[]>([])
+  const [showPromptForm, setShowPromptForm] = useState(false)
+  const [editingPromptId, setEditingPromptId] = useState<number | null>(null)
+  const [promptName, setPromptName] = useState('')
+  const [promptDesc, setPromptDesc] = useState('')
+  const [promptContent, setPromptContent] = useState('')
 
   useEffect(() => {
     if (!user?.is_admin) {
@@ -66,6 +85,9 @@ export default function AdminPage() {
       } else if (activeTab === 'stats') {
         const response = await api.get('/admin/stats')
         setStats(response.data)
+      } else if (activeTab === 'prompts') {
+        const response = await api.get('/chat/system-prompts/admin/all')
+        setPrompts(response.data)
       }
     } catch (error) {
       console.error('Failed to load admin data:', error)
@@ -179,6 +201,63 @@ export default function AdminPage() {
     }
   }
 
+  // Prompt management handlers
+  const handleAddPrompt = async () => {
+    if (!promptName.trim() || !promptContent.trim()) return
+    try {
+      await api.post('/chat/system-prompts/builtin', {
+        name: promptName.trim(),
+        description: promptDesc.trim(),
+        prompt: promptContent.trim()
+      })
+      resetPromptForm()
+      loadData()
+    } catch (error) {
+      console.error('Failed to add prompt:', error)
+    }
+  }
+
+  const handleEditPrompt = (prompt: SystemPromptItem) => {
+    setEditingPromptId(prompt.id)
+    setPromptName(prompt.name)
+    setPromptDesc(prompt.description || '')
+    setPromptContent(prompt.prompt)
+    setShowPromptForm(true)
+  }
+
+  const handleUpdatePrompt = async () => {
+    if (!editingPromptId || !promptName.trim() || !promptContent.trim()) return
+    try {
+      await api.put(`/chat/system-prompts/admin/${editingPromptId}`, {
+        name: promptName.trim(),
+        description: promptDesc.trim(),
+        prompt: promptContent.trim()
+      })
+      resetPromptForm()
+      loadData()
+    } catch (error) {
+      console.error('Failed to update prompt:', error)
+    }
+  }
+
+  const handleDeletePrompt = async (promptId: number) => {
+    if (!window.confirm('确定要删除这个提示词吗？')) return
+    try {
+      await api.delete(`/chat/system-prompts/admin/${promptId}`)
+      loadData()
+    } catch (error) {
+      console.error('Failed to delete prompt:', error)
+    }
+  }
+
+  const resetPromptForm = () => {
+    setShowPromptForm(false)
+    setEditingPromptId(null)
+    setPromptName('')
+    setPromptDesc('')
+    setPromptContent('')
+  }
+
   const sortedImages = [...images].sort((a, b) => {
     switch (sortBy) {
       case 'newest':
@@ -265,6 +344,15 @@ export default function AdminPage() {
             >
               <MessageSquare className="w-4 h-4" />
               数据统计
+            </button>
+            <button
+              onClick={() => setActiveTab('prompts')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
+                activeTab === 'prompts' ? 'bg-accent-50 text-accent-700' : 'text-zinc-600 hover:bg-zinc-100'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              提示词管理
             </button>
           </div>
         </div>
@@ -556,8 +644,98 @@ export default function AdminPage() {
                   </div>
                   <div>
                     <p className="text-sm text-zinc-500">待审核作品</p>
-                    <p className="text-2xl font-bold text-zinc-900">{stats.pending_images || 0}</p>
+                      <p className="text-2xl font-bold text-zinc-900">{stats.pending_images || 0}</p>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {activeTab === 'prompts' && (
+            <div className="space-y-4">
+              <div className="bg-white rounded-xl border border-zinc-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-zinc-900">系统提示词管理</h3>
+                    <p className="text-sm text-zinc-500 mt-1">管理预置和用户创建的提示词</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      resetPromptForm()
+                      setShowPromptForm(true)
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-accent-600 text-white rounded-lg hover:bg-accent-700 transition"
+                  >
+                    <Plus className="w-4 h-4" />
+                    添加提示词
+                  </button>
+                </div>
+
+                {showPromptForm && (
+                  <div className="mb-6 p-4 bg-zinc-50 rounded-xl space-y-3">
+                    <h4 className="font-medium text-zinc-800">
+                      {editingPromptId ? '编辑提示词' : '添加新提示词'}
+                    </h4>
+                    <input
+                      value={promptName}
+                      onChange={(e) => setPromptName(e.target.value)}
+                      placeholder="名称"
+                      className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none"
+                    />
+                    <input
+                      value={promptDesc}
+                      onChange={(e) => setPromptDesc(e.target.value)}
+                      placeholder="描述（可选）"
+                      className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none"
+                    />
+                    <textarea
+                      value={promptContent}
+                      onChange={(e) => setPromptContent(e.target.value)}
+                      placeholder="提示词内容"
+                      rows={4}
+                      className="w-full px-3 py-2 border border-zinc-300 rounded-lg resize-none focus:ring-2 focus:ring-accent-500 outline-none"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={editingPromptId ? handleUpdatePrompt : handleAddPrompt}
+                        disabled={!promptName.trim() || !promptContent.trim()}
+                        className="px-4 py-2 bg-accent-600 text-white rounded-lg hover:bg-accent-700 transition disabled:opacity-50"
+                      >
+                        {editingPromptId ? '保存修改' : '添加'}
+                      </button>
+                      <button onClick={resetPromptForm} className="px-4 py-2 text-zinc-600 hover:bg-zinc-200 rounded-lg transition">
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {prompts.length === 0 ? (
+                    <p className="text-sm text-zinc-400 text-center py-8">暂无提示词</p>
+                  ) : (
+                    prompts.map((p) => (
+                      <div key={p.id} className="flex items-start justify-between p-4 bg-zinc-50 rounded-xl hover:bg-zinc-100 transition">
+                        <div className="flex-1 min-w-0 mr-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-medium text-zinc-800">{p.name}</h4>
+                            {p.is_builtin && <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">预置</span>}
+                            {p.user_id && !p.is_builtin && <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">用户</span>}
+                          </div>
+                          {p.description && <p className="text-sm text-zinc-500 mb-1">{p.description}</p>}
+                          <p className="text-sm text-zinc-600 line-clamp-2 font-mono bg-white p-2 rounded border border-zinc-200">{p.prompt}</p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button onClick={() => handleEditPrompt(p)} className="p-1.5 hover:bg-blue-100 rounded-lg transition">
+                            <Edit3 className="w-4 h-4 text-blue-600" />
+                          </button>
+                          <button onClick={() => handleDeletePrompt(p.id)} className="p-1.5 hover:bg-red-100 rounded-lg transition">
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>

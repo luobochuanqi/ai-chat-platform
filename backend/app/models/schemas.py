@@ -57,6 +57,7 @@ class ChatMessageResponse(BaseModel):
 
 class ChatSessionCreate(BaseModel):
     title: Optional[str] = "新会话"
+    system_prompt: Optional[str] = None
 
 class ChatSessionResponse(BaseModel):
     id: int
@@ -77,6 +78,10 @@ class ChatSessionDetail(BaseModel):
     
     class Config:
         from_attributes = True
+
+class GenerateTitleRequest(BaseModel):
+    session_id: int
+    first_message: str
 
 # System Prompt schemas
 class SystemPromptCreate(BaseModel):

@@ -30,18 +30,19 @@ def _get_full_image_url(image_path: str) -> str:
 
 
 def _truncate_prompt(prompt: str) -> str:
-    """Truncate prompt to 300 Chinese chars or 500 English chars"""
-    count = 0
+    """Truncate prompt to 300 Chinese chars or 500 total chars"""
+    chinese_count = 0
+    total = 0
     result = []
     for char in prompt:
-        if "\u4e00" <= char <= "\u9fff":
-            if count + 2 > 300:
-                break
-            count += 2
-        else:
-            if count + 1 > 500:
-                break
-            count += 1
+        is_chinese = 0x4E00 <= ord(char) <= 0x9FFF
+        if is_chinese and chinese_count >= 300:
+            break
+        if total >= 500:
+            break
+        if is_chinese:
+            chinese_count += 1
+        total += 1
         result.append(char)
     return "".join(result)
 

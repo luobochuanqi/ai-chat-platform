@@ -16,8 +16,12 @@ except ImportError:
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 @router.post("/sessions", response_model=ChatSessionResponse)
-def create_session(title: Optional[str] = "新会话", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    session = ChatSession(user_id=current_user.id, title=title)
+def create_session(data: ChatSessionCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    session = ChatSession(
+        user_id=current_user.id,
+        title=data.title,
+        system_prompt=data.system_prompt
+    )
     db.add(session)
     db.commit()
     db.refresh(session)
@@ -72,9 +76,9 @@ def delete_session(session_id: int, db: Session = Depends(get_db), current_user:
     return {"message": "Session deleted"}
 
 @router.post("/sessions/generate-title")
-async def generate_session_title(session_id: int, first_message: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def generate_session_title(request: GenerateTitleRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Generate a title for a session based on the first message"""
-    session = db.query(ChatSession).filter(ChatSession.id == session_id, ChatSession.user_id == current_user.id).first()
+    session = db.query(ChatSession).filter(ChatSession.id == request.session_id, ChatSession.user_id == current_user.id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
@@ -85,7 +89,7 @@ async def generate_session_title(session_id: int, first_message: str, db: Sessio
     try:
         messages = [
             {"role": "system", "content": "你是一个标题生成助手。请根据用户的对话内容，生成一个简短的标题（不超过10个字），概括对话主题。只返回标题，不要其他内容。"},
-            {"role": "user", "content": f"请为以下对话生成标题：{first_message[:100]}"}
+            {"role": "user", "content": f"请为以下对话生成标题：{request.first_message[:100]}"}
         ]
         response = await chat_with_deepseek(messages)
         title = response["choices"][0]["message"]["content"].strip()
@@ -100,6 +104,7 @@ async def generate_session_title(session_id: int, first_message: str, db: Sessio
         db.commit()
         return {"title": title}
     except Exception as e:
+        print(f"Title generation error: {e}")
         return {"title": "新会话"}
 
 @router.post("/sessions/{session_id}/messages", response_model=ChatMessageResponse)
@@ -121,19 +126,27 @@ async def send_message(session_id: int, message: ChatMessageCreate, db: Session 
     history = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at.desc()).limit(10).all()
     history.reverse()
     
-    messages = [{"role": m.role, "content": m.content} for m in history]
+    messages = []
+    # Prepend session system_prompt if set
+    if session.system_prompt:
+        messages.append({"role": "system", "content": session.system_prompt})
+    messages.extend([{"role": m.role, "content": m.content} for m in history])
     
     # Web search if enabled
     if message.web_search and DDGS_AVAILABLE:
         try:
             with DDGS() as ddgs:
-                search_results = ddgs.text(message.content, max_results=3)
-                if search_results:
-                    search_text = "\n\n".join([f"[{i+1}] {result['title']}: {result['body']}" for i, result in enumerate(search_results)])
-                    # Append search results to the last user message
+                results = list(ddgs.text(message.content, max_results=3))
+                if results:
+                    search_text = "\n\n".join([
+                        f"[{i+1}] {r.get('title', '')}: {r.get('body', '')}" 
+                        for i, r in enumerate(results)
+                    ])
                     messages[-1]["content"] = f"{message.content}\n\n以下是我搜索到的相关信息：\n{search_text}\n\n请根据以上信息回答我的问题。"
         except Exception as e:
             print(f"Web search error: {e}")
+    elif message.web_search and not DDGS_AVAILABLE:
+        print("Web search requested but duckduckgo_search not available")
     
     # Call DeepSeek API
     try:
@@ -231,3 +244,35 @@ def create_builtin_prompt(prompt: SystemPromptCreate, db: Session = Depends(get_
     db.commit()
     db.refresh(new_prompt)
     return new_prompt
+
+@router.get("/system-prompts/admin/all", response_model=List[SystemPromptResponse])
+def list_all_prompts(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """List all system prompts (admin only)"""
+    prompts = db.query(SystemPrompt).order_by(SystemPrompt.created_at.desc()).all()
+    return prompts
+
+@router.put("/system-prompts/admin/{prompt_id}", response_model=SystemPromptResponse)
+def admin_update_prompt(prompt_id: int, prompt: SystemPromptUpdate, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """Update any system prompt (admin only)"""
+    existing = db.query(SystemPrompt).filter(SystemPrompt.id == prompt_id).first()
+    if not existing:
+        raise HTTPException(status_code=404, detail="System prompt not found")
+    if prompt.name is not None:
+        existing.name = prompt.name
+    if prompt.description is not None:
+        existing.description = prompt.description
+    if prompt.prompt is not None:
+        existing.prompt = prompt.prompt
+    db.commit()
+    db.refresh(existing)
+    return existing
+
+@router.delete("/system-prompts/admin/{prompt_id}")
+def admin_delete_prompt(prompt_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """Delete any system prompt (admin only)"""
+    existing = db.query(SystemPrompt).filter(SystemPrompt.id == prompt_id).first()
+    if not existing:
+        raise HTTPException(status_code=404, detail="System prompt not found")
+    db.delete(existing)
+    db.commit()
+    return {"message": "System prompt deleted"}
