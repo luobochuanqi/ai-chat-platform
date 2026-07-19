@@ -279,10 +279,7 @@ export default function ChatPage() {
 
         <div className="p-3 space-y-2">
           <button
-            onClick={() => {
-              loadPresets()
-              setShowSystemPromptEditor(true)
-            }}
+            onClick={handleNewSession}
             className="w-full flex items-center justify-center gap-2 bg-accent-600 text-white py-2 rounded-lg hover:bg-accent-700 transition"
           >
             <span className="text-lg">+</span>

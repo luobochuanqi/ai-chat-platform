@@ -102,7 +102,7 @@ async def generate_image(
             "is_public": image.is_public,
             "likes": image.likes,
             "created_at": image.created_at,
-            "user_nickname": user.nickname if user else "Unknown",
+            "user_nickname": current_user.nickname,
             "is_liked": False,
         }
     except HTTPException:
