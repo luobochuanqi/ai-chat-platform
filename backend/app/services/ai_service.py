@@ -55,7 +55,6 @@ async def generate_image_seedream(prompt: str):
         "prompt": prompt,
         "size": "2K",
         "response_format": "url",
-        "sequential_image_generation": "disabled",
         "output_format": "jpeg",
         "stream": False,
         "watermark": False,

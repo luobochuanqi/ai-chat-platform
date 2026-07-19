@@ -137,7 +137,7 @@ export default function ChatPage() {
 
   const handleNewSession = async () => {
     try {
-      const response = await api.post('/chat/sessions', null, { params: { title: '新会话' } })
+      const response = await api.post('/chat/sessions', { title: '新会话' })
       const newSession = response.data
       setSessions([newSession, ...sessions])
       setCurrentSession(newSession.id)
