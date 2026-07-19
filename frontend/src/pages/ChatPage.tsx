@@ -2,6 +2,13 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import api from '../services/api'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
+import rehypeKatex from 'rehype-katex'
+import 'highlight.js/styles/github-dark.css'
+import 'katex/dist/katex.min.css'
+import { Globe, Sparkles } from 'lucide-react'
 
 interface Message {
   id: number
@@ -18,6 +25,60 @@ interface Session {
   message_count: number
 }
 
+// Markdown components
+const MarkdownComponents = {
+  code({ node, inline, className, children, ...props }: any) {
+    const match = /language-(\w+)/.exec(className || '')
+    return !inline && match ? (
+      <div className="relative">
+        <div className="absolute top-0 right-0 px-2 py-1 text-xs text-zinc-400 bg-zinc-800 rounded-bl">
+          {match[1]}
+        </div>
+        <code className={className} {...props}>
+          {children}
+        </code>
+      </div>
+    ) : (
+      <code className="bg-zinc-100 px-1 py-0.5 rounded text-sm font-mono text-zinc-800" {...props}>
+        {children}
+      </code>
+    )
+  },
+  p({ children }: any) {
+    return <p className="mb-2 last:mb-0">{children}</p>
+  },
+  ul({ children }: any) {
+    return <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>
+  },
+  ol({ children }: any) {
+    return <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>
+  },
+  h1({ children }: any) {
+    return <h1 className="text-xl font-bold mb-2">{children}</h1>
+  },
+  h2({ children }: any) {
+    return <h2 className="text-lg font-bold mb-2">{children}</h2>
+  },
+  h3({ children }: any) {
+    return <h3 className="text-base font-bold mb-2">{children}</h3>
+  },
+  blockquote({ children }: any) {
+    return <blockquote className="border-l-4 border-accent-400 pl-4 italic my-2 text-zinc-600">{children}</blockquote>
+  },
+  table({ children }: any) {
+    return <div className="overflow-x-auto mb-2"><table className="min-w-full border-collapse border border-zinc-300">{children}</table></div>
+  },
+  thead({ children }: any) {
+    return <thead className="bg-zinc-100">{children}</thead>
+  },
+  th({ children }: any) {
+    return <th className="border border-zinc-300 px-3 py-2 text-left text-sm font-semibold">{children}</th>
+  },
+  td({ children }: any) {
+    return <td className="border border-zinc-300 px-3 py-2 text-sm">{children}</td>
+  },
+}
+
 export default function ChatPage() {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
@@ -26,6 +87,9 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [editingSession, setEditingSession] = useState<number | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -55,6 +119,22 @@ export default function ChatPage() {
     }
   }
 
+  const generateSessionTitle = async (sessionId: number, firstMessage: string) => {
+    try {
+      const response = await api.post('/chat/sessions/generate-title', { 
+        session_id: sessionId,
+        first_message: firstMessage 
+      })
+      if (response.data.title) {
+        setSessions(prev => prev.map(s => 
+          s.id === sessionId ? { ...s, title: response.data.title } : s
+        ))
+      }
+    } catch (error) {
+      console.error('Failed to generate title:', error)
+    }
+  }
+
   const handleNewSession = async () => {
     try {
       const response = await api.post('/chat/sessions', null, { params: { title: '新会话' } })
@@ -64,6 +144,22 @@ export default function ChatPage() {
       setMessages([])
     } catch (error) {
       console.error('Failed to create session:', error)
+    }
+  }
+
+  const handleUpdateTitle = async (sessionId: number) => {
+    if (!editTitle.trim()) {
+      setEditingSession(null)
+      return
+    }
+    try {
+      await api.put(`/chat/sessions/${sessionId}`, null, { params: { title: editTitle.trim() } })
+      setSessions(prev => prev.map(s => 
+        s.id === sessionId ? { ...s, title: editTitle.trim() } : s
+      ))
+      setEditingSession(null)
+    } catch (error) {
+      console.error('Failed to update title:', error)
     }
   }
 
@@ -84,9 +180,18 @@ export default function ChatPage() {
     setMessages(prev => [...prev, tempUserMsg])
     
     try {
-      const response = await api.post(`/chat/sessions/${currentSession}/messages`, { content: userMessage })
+      const response = await api.post(`/chat/sessions/${currentSession}/messages`, { 
+        content: userMessage,
+        web_search: webSearchEnabled 
+      })
       setMessages(prev => [...prev, response.data])
       loadSessions()
+      
+      // Generate title if this is the first message
+      const currentSessionData = sessions.find(s => s.id === currentSession)
+      if (currentSessionData && currentSessionData.title === '新会话' && messages.length === 0) {
+        generateSessionTitle(currentSession, userMessage)
+      }
     } catch (error: any) {
       console.error('Failed to send message:', error)
       const errorMsg: Message = {
@@ -156,9 +261,34 @@ export default function ChatPage() {
               }`}
             >
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{session.title}</p>
+                {editingSession === session.id ? (
+                  <input
+                    autoFocus
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onBlur={() => handleUpdateTitle(session.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleUpdateTitle(session.id)
+                      if (e.key === 'Escape') setEditingSession(null)
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full text-sm px-1 py-0.5 border border-accent-300 rounded outline-none"
+                  />
+                ) : (
+                  <p className="text-sm font-medium truncate">{session.title}</p>
+                )}
                 <p className="text-xs text-zinc-400">{session.message_count} 条消息</p>
               </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setEditingSession(session.id)
+                  setEditTitle(session.title)
+                }}
+                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-blue-100 rounded transition text-blue-500 text-xs mr-1"
+              >
+                编辑
+              </button>
               <button
                 onClick={(e) => {
                   e.stopPropagation()
@@ -206,7 +336,19 @@ export default function ChatPage() {
                   <div className={`max-w-3xl px-4 py-3 rounded-2xl ${
                     message.role === 'user' ? 'bg-accent-600 text-white' : 'bg-white border border-zinc-200 text-zinc-900'
                   }`}>
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    {message.role === 'user' ? (
+                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    ) : (
+                      <div className="prose prose-sm max-w-none">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          rehypePlugins={[rehypeHighlight, rehypeKatex]}
+                          components={MarkdownComponents}
+                        >
+                          {message.content}
+                        </ReactMarkdown>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -225,28 +367,45 @@ export default function ChatPage() {
             </div>
             
             <div className="p-4 bg-white border-t border-zinc-200">
-              <div className="flex items-end gap-2 max-w-4xl mx-auto">
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="输入消息... (按 Enter 发送)"
-                  rows={1}
-                  className="flex-1 px-4 py-3 border border-zinc-300 rounded-xl resize-none focus:ring-2 focus:ring-accent-500 focus:border-transparent outline-none transition min-h-[44px]"
-                />
-                <button
-                  onClick={handleSendMessage}
-                  disabled={loading || !input.trim()}
-                  className="px-6 py-3 bg-accent-600 text-white rounded-xl font-medium hover:bg-accent-700 transition disabled:opacity-50"
-                >
-                  发送
-                </button>
+              <div className="max-w-4xl mx-auto space-y-2">
+                {/* Web Search Toggle */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition ${
+                      webSearchEnabled 
+                        ? 'bg-blue-100 text-blue-700 border border-blue-200' 
+                        : 'bg-zinc-100 text-zinc-600 border border-zinc-200 hover:bg-zinc-200'
+                    }`}
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    {webSearchEnabled ? '联网搜索已开启' : '联网搜索'}
+                  </button>
+                </div>
+                <div className="flex items-end gap-2">
+                  <textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="输入消息... (按 Enter 发送)"
+                    rows={1}
+                    className="flex-1 px-4 py-3 border border-zinc-300 rounded-xl resize-none focus:ring-2 focus:ring-accent-500 focus:border-transparent outline-none transition min-h-[44px]"
+                  />
+                  <button
+                    onClick={handleSendMessage}
+                    disabled={loading || !input.trim()}
+                    className="px-6 py-3 bg-accent-600 text-white rounded-xl font-medium hover:bg-accent-700 transition disabled:opacity-50"
+                  >
+                    发送
+                  </button>
+                </div>
               </div>
             </div>
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
+              <Sparkles className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
               <p className="text-zinc-500">选择一个会话或创建新会话开始对话</p>
               <button onClick={handleNewSession} className="mt-4 px-6 py-2 bg-accent-600 text-white rounded-lg hover:bg-accent-700 transition">
                 开始新对话
