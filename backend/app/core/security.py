@@ -1,20 +1,31 @@
-from passlib.context import CryptContext
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from app.core.config import get_settings
+import hashlib
+import secrets
 
 settings = get_settings()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def _hash_password(password: str) -> str:
+    """使用 SHA-256 + salt 哈希密码，避免 bcrypt 的 72 字节限制"""
+    salt = secrets.token_hex(16)
+    hash_value = hashlib.sha256((password + salt).encode()).hexdigest()
+    return f"sha256${salt}${hash_value}"
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    """验证密码"""
+    if not hashed_password or '$' not in hashed_password:
+        return False
+    parts = hashed_password.split('$')
+    if len(parts) != 3 or parts[0] != 'sha256':
+        return False
+    salt = parts[1]
+    stored_hash = parts[2]
+    computed_hash = hashlib.sha256((plain_password + salt).encode()).hexdigest()
+    return secrets.compare_digest(stored_hash, computed_hash)
 
 def get_password_hash(password: str) -> str:
-    # Truncate password to 72 bytes to avoid bcrypt limitation
-    password_bytes = password.encode('utf-8')
-    if len(password_bytes) > 72:
-        password_bytes = password_bytes[:72]
-    return pwd_context.hash(password_bytes.decode('utf-8'))
+    return _hash_password(password)
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
