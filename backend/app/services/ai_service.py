@@ -23,7 +23,20 @@ async def chat_with_deepseek(messages: list, stream: bool = False):
             timeout=60.0,
         )
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        
+        # Extract usage info
+        usage = data.get("usage", {})
+        tokens_used = usage.get("total_tokens", 0)
+        
+        return {
+            "choices": data.get("choices", []),
+            "usage": {
+                "total_tokens": tokens_used,
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+            }
+        }
 
 
 async def generate_image_seedream(prompt: str):

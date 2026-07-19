@@ -43,11 +43,13 @@ class UserListResponse(BaseModel):
 # Chat schemas
 class ChatMessageCreate(BaseModel):
     content: str = Field(..., min_length=1)
+    web_search: Optional[bool] = False
 
 class ChatMessageResponse(BaseModel):
     id: int
     role: str
     content: str
+    tokens_used: Optional[int] = None
     created_at: datetime
     
     class Config:
@@ -76,6 +78,30 @@ class ChatSessionDetail(BaseModel):
     class Config:
         from_attributes = True
 
+# System Prompt schemas
+class SystemPromptCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    prompt: str = Field(..., min_length=1)
+
+class SystemPromptUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    prompt: Optional[str] = Field(None, min_length=1)
+
+class SystemPromptResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    prompt: str
+    is_builtin: bool
+    user_id: Optional[int] = None
+    is_active: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
 # Image schemas
 class ImageGenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=1000)
@@ -88,12 +114,16 @@ class ImageResponse(BaseModel):
     likes: int
     created_at: datetime
     user_nickname: str
+    is_liked: Optional[bool] = False
     
     class Config:
         from_attributes = True
 
 class ImageLikeRequest(BaseModel):
     image_id: int
+
+class BatchImageRequest(BaseModel):
+    image_ids: List[int]
 
 # Token
 class Token(BaseModel):
