@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    image: ghcr.io/luobochuanqi/ai-chat-platform-backend:latest
+    image: ghcr.io/luobochuanqi/ai-chat-platform-backend:main
     container_name: ai-chat-backend
     ports:
       - "8000:8000"
@@ -18,7 +18,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ghcr.io/luobochuanqi/ai-chat-platform-frontend:latest
+    image: ghcr.io/luobochuanqi/ai-chat-platform-frontend:main
     container_name: ai-chat-frontend
     ports:
       - "80:80"
