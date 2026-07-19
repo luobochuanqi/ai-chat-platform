@@ -8,7 +8,7 @@ import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
 import 'highlight.js/styles/github-dark.css'
 import 'katex/dist/katex.min.css'
-import { Globe, Sparkles, Settings, X, Plus, Trash2 } from 'lucide-react'
+import { Globe, Sparkles, X, Plus, Trash2 } from 'lucide-react'
 
 interface Message {
   id: number
@@ -45,25 +45,15 @@ const MarkdownComponents = {
         <div className="absolute top-0 right-0 px-2 py-1 text-xs text-zinc-400 bg-zinc-800 rounded-bl">
           {match[1]}
         </div>
-        <code className={className} {...props}>
-          {children}
-        </code>
+        <code className={className} {...props}>{children}</code>
       </div>
     ) : (
-      <code className="bg-zinc-100 px-1 py-0.5 rounded text-sm font-mono text-zinc-800" {...props}>
-        {children}
-      </code>
+      <code className="bg-zinc-100 px-1 py-0.5 rounded text-sm font-mono text-zinc-800" {...props}>{children}</code>
     )
   },
-  p({ children }: any) {
-    return <p className="mb-2 last:mb-0">{children}</p>
-  },
-  ul({ children }: any) {
-    return <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>
-  },
-  ol({ children }: any) {
-    return <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>
-  },
+  p({ children }: any) { return <p className="mb-2 last:mb-0">{children}</p> },
+  ul({ children }: any) { return <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul> },
+  ol({ children }: any) { return <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol> },
   h1({ children }: any) { return <h1 className="text-xl font-bold mb-2">{children}</h1> },
   h2({ children }: any) { return <h2 className="text-lg font-bold mb-2">{children}</h2> },
   h3({ children }: any) { return <h3 className="text-base font-bold mb-2">{children}</h3> },
@@ -89,12 +79,11 @@ export default function ChatPage() {
   const [editingSession, setEditingSession] = useState<number | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [webSearchEnabled, setWebSearchEnabled] = useState(false)
-  
-  // System prompt states
-  const [showSystemPromptEditor, setShowSystemPromptEditor] = useState(false)
-  const [systemPrompt, setSystemPrompt] = useState('')
-  const [systemPromptName, setSystemPromptName] = useState('')
-  const [systemPromptDescription, setSystemPromptDescription] = useState('')
+
+  const [showNewSessionDialog, setShowNewSessionDialog] = useState(false)
+  const [pendingSystemPrompt, setPendingSystemPrompt] = useState('')
+  const [pendingPromptName, setPendingPromptName] = useState('')
+  const [pendingPromptDesc, setPendingPromptDesc] = useState('')
   const [presets, setPresets] = useState<SystemPromptItem[]>([])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -146,17 +135,26 @@ export default function ChatPage() {
     }
   }
 
-  const handleNewSession = async () => {
+  const openNewSessionDialog = () => {
+    setPendingSystemPrompt('')
+    setPendingPromptName('')
+    setPendingPromptDesc('')
+    loadPresets()
+    setShowNewSessionDialog(true)
+  }
+
+  const handleCreateSession = async () => {
     try {
       const response = await api.post('/chat/sessions', {
         title: '新会话',
-        system_prompt: systemPrompt || undefined
+        system_prompt: pendingSystemPrompt || undefined
       })
       const newSession = response.data
       setSessions([newSession, ...sessions])
       setCurrentSession(newSession.id)
       setMessages([])
-      setShowSystemPromptEditor(false)
+      setShowNewSessionDialog(false)
+      setPendingSystemPrompt('')
     } catch (error) {
       console.error('Failed to create session:', error)
     }
@@ -231,16 +229,16 @@ export default function ChatPage() {
   }
 
   const handleSaveCustomPreset = async () => {
-    if (!systemPrompt.trim() || !systemPromptName.trim()) return
+    if (!pendingSystemPrompt.trim() || !pendingPromptName.trim()) return
     try {
       const response = await api.post('/chat/system-prompts', {
-        name: systemPromptName,
-        description: systemPromptDescription,
-        prompt: systemPrompt
+        name: pendingPromptName,
+        description: pendingPromptDesc,
+        prompt: pendingSystemPrompt
       })
       setPresets(prev => [...prev, response.data])
-      setSystemPromptName('')
-      setSystemPromptDescription('')
+      setPendingPromptName('')
+      setPendingPromptDesc('')
     } catch (error) {
       console.error('Failed to save preset:', error)
     }
@@ -277,30 +275,14 @@ export default function ChatPage() {
           <p className="text-sm text-zinc-500">{user?.nickname}</p>
         </div>
 
-        <div className="p-3 space-y-2">
+        <div className="p-3">
           <button
-            onClick={handleNewSession}
+            onClick={openNewSessionDialog}
             className="w-full flex items-center justify-center gap-2 bg-accent-600 text-white py-2 rounded-lg hover:bg-accent-700 transition"
           >
             <span className="text-lg">+</span>
             新建会话
           </button>
-          <div className="relative">
-            <input
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              placeholder="系统提示词（可选）"
-              className="w-full px-3 py-1.5 text-xs border border-zinc-200 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none bg-zinc-50"
-            />
-            {systemPrompt && (
-              <button
-                onClick={() => setSystemPrompt('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-3">
@@ -334,20 +316,13 @@ export default function ChatPage() {
               </div>
               <div className="flex items-center gap-0.5">
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setEditingSession(session.id)
-                    setEditTitle(session.title)
-                  }}
+                  onClick={(e) => { e.stopPropagation(); setEditingSession(session.id); setEditTitle(session.title) }}
                   className="opacity-0 group-hover:opacity-100 p-1 hover:bg-blue-100 rounded transition text-blue-500 text-xs"
                 >
                   编辑
                 </button>
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleDeleteSession(session.id)
-                  }}
+                  onClick={(e) => { e.stopPropagation(); handleDeleteSession(session.id) }}
                   className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition text-red-500 text-xs"
                 >
                   删除
@@ -358,26 +333,16 @@ export default function ChatPage() {
         </div>
 
         <div className="p-3 border-t border-zinc-200 space-y-1">
-          <button onClick={() => navigate('/chat')} className="w-full text-left px-3 py-2 text-sm font-medium text-accent-700 bg-accent-50 rounded-lg">
-            AI 对话
-          </button>
-          <button onClick={() => navigate('/image')} className="w-full text-left px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 rounded-lg transition">
-            AI 生图
-          </button>
-          <button onClick={() => navigate('/gallery')} className="w-full text-left px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 rounded-lg transition">
-            作品墙
-          </button>
+          <button onClick={() => navigate('/chat')} className="w-full text-left px-3 py-2 text-sm font-medium text-accent-700 bg-accent-50 rounded-lg">AI 对话</button>
+          <button onClick={() => navigate('/image')} className="w-full text-left px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 rounded-lg transition">AI 生图</button>
+          <button onClick={() => navigate('/gallery')} className="w-full text-left px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 rounded-lg transition">作品墙</button>
           {user?.is_admin && (
-            <button onClick={() => navigate('/admin')} className="w-full text-left px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 rounded-lg transition">
-              管理后台
-            </button>
+            <button onClick={() => navigate('/admin')} className="w-full text-left px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 rounded-lg transition">管理后台</button>
           )}
         </div>
 
         <div className="p-3 border-t border-zinc-200">
-          <button onClick={logout} className="w-full text-left px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition">
-            退出登录
-          </button>
+          <button onClick={logout} className="w-full text-left px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition">退出登录</button>
         </div>
       </div>
 
@@ -395,11 +360,7 @@ export default function ChatPage() {
                       <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                     ) : (
                       <div className="prose prose-sm max-w-none">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          rehypePlugins={[rehypeHighlight, rehypeKatex]}
-                          components={MarkdownComponents}
-                        >
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight, rehypeKatex]} components={MarkdownComponents}>
                           {message.content}
                         </ReactMarkdown>
                       </div>
@@ -427,27 +388,11 @@ export default function ChatPage() {
                   <button
                     onClick={() => setWebSearchEnabled(!webSearchEnabled)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition ${
-                      webSearchEnabled
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                        : 'bg-zinc-100 text-zinc-600 border border-zinc-200 hover:bg-zinc-200'
+                      webSearchEnabled ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-zinc-100 text-zinc-600 border border-zinc-200 hover:bg-zinc-200'
                     }`}
                   >
                     <Globe className="w-3.5 h-3.5" />
                     {webSearchEnabled ? '联网搜索已开启' : '联网搜索'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      loadPresets()
-                      setShowSystemPromptEditor(true)
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition ${
-                      systemPrompt
-                        ? 'bg-accent-100 text-accent-700 border border-accent-200'
-                        : 'bg-zinc-100 text-zinc-600 border border-zinc-200 hover:bg-zinc-200'
-                    }`}
-                  >
-                    <Settings className="w-3.5 h-3.5" />
-                    {systemPrompt ? '系统提示词已设置' : '编辑系统提示词'}
                   </button>
                 </div>
                 <div className="flex items-end gap-2">
@@ -474,102 +419,63 @@ export default function ChatPage() {
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <Sparkles className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
-              <p className="text-zinc-500 mb-2">选择一个会话或创建新会话开始对话</p>
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-72">
-                  <input
-                    value={systemPrompt}
-                    onChange={(e) => setSystemPrompt(e.target.value)}
-                    placeholder="系统提示词（可选，例如：你是一个编程导师...）"
-                    className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none"
-                  />
-                </div>
-                <button
-                  onClick={() => {
-                    loadPresets()
-                    setShowSystemPromptEditor(true)
-                  }}
-                  className="text-sm text-accent-600 hover:text-accent-700"
-                >
-                  从预设中选择
-                </button>
-                <button
-                  onClick={handleNewSession}
-                  className="mt-2 px-6 py-2 bg-accent-600 text-white rounded-lg hover:bg-accent-700 transition"
-                >
-                  开始新对话
-                </button>
-              </div>
+              <p className="text-zinc-500 mb-6">选择一个会话或创建新会话开始对话</p>
+              <button onClick={openNewSessionDialog} className="px-8 py-3 bg-accent-600 text-white rounded-xl font-medium hover:bg-accent-700 transition shadow-lg shadow-accent-200">
+                开始新对话
+              </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* System Prompt Editor Modal */}
-      {showSystemPromptEditor && (
+      {/* New Session Dialog */}
+      {showNewSessionDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col mx-4">
             <div className="flex items-center justify-between p-5 border-b border-zinc-200">
-              <h3 className="text-lg font-bold text-zinc-900">编辑系统提示词</h3>
-              <button
-                onClick={() => setShowSystemPromptEditor(false)}
-                className="p-1 hover:bg-zinc-100 rounded-lg transition"
-              >
+              <h3 className="text-lg font-bold text-zinc-900">新建会话 - 设置系统提示词</h3>
+              <button onClick={() => setShowNewSessionDialog(false)} className="p-1 hover:bg-zinc-100 rounded-lg transition">
                 <X className="w-5 h-5 text-zinc-500" />
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              {/* System Prompt Input */}
               <div>
                 <label className="block text-sm font-medium text-zinc-700 mb-1">
-                  系统提示词 (System Prompt)
+                  系统提示词
                 </label>
                 <textarea
-                  value={systemPrompt}
-                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  value={pendingSystemPrompt}
+                  onChange={(e) => setPendingSystemPrompt(e.target.value)}
                   placeholder={defaultSystemPrompt}
                   rows={5}
                   className="w-full px-3 py-2 border border-zinc-300 rounded-lg resize-none focus:ring-2 focus:ring-accent-500 outline-none text-sm"
                 />
                 <p className="text-xs text-zinc-400 mt-1">
-                  用于设定 AI 的行为模式。留空则使用默认提示词。
+                  设定 AI 的行为模式。留空使用默认提示词。创建后不可修改。
                 </p>
               </div>
 
               {/* Save as Custom Preset */}
               <div className="bg-zinc-50 rounded-xl p-4 space-y-2">
                 <h4 className="text-sm font-semibold text-zinc-700">保存为我的预设</h4>
-                <input
-                  value={systemPromptName}
-                  onChange={(e) => setSystemPromptName(e.target.value)}
-                  placeholder="预设名称（例如：我的编程助手）"
-                  className="w-full px-3 py-2 text-sm border border-zinc-300 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none"
-                />
-                <input
-                  value={systemPromptDescription}
-                  onChange={(e) => setSystemPromptDescription(e.target.value)}
-                  placeholder="简短描述（可选）"
-                  className="w-full px-3 py-2 text-sm border border-zinc-300 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none"
-                />
+                <input value={pendingPromptName} onChange={(e) => setPendingPromptName(e.target.value)} placeholder="预设名称" className="w-full px-3 py-2 text-sm border border-zinc-300 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none" />
+                <input value={pendingPromptDesc} onChange={(e) => setPendingPromptDesc(e.target.value)} placeholder="简短描述（可选）" className="w-full px-3 py-2 text-sm border border-zinc-300 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none" />
                 <button
                   onClick={handleSaveCustomPreset}
-                  disabled={!systemPrompt.trim() || !systemPromptName.trim()}
+                  disabled={!pendingSystemPrompt.trim() || !pendingPromptName.trim()}
                   className="flex items-center gap-2 px-4 py-2 bg-accent-600 text-white text-sm rounded-lg hover:bg-accent-700 transition disabled:opacity-50"
                 >
-                  <Plus className="w-4 h-4" />
-                  保存预设
+                  <Plus className="w-4 h-4" /> 保存预设
                 </button>
               </div>
 
               {/* Preset List */}
               <div>
                 <h4 className="text-sm font-semibold text-zinc-700 mb-2">
-                  预设提示词
+                  从预设中选择
                   {presets.filter(p => p.is_builtin).length > 0 && (
-                    <span className="text-xs font-normal text-zinc-400 ml-2">
-                      ({presets.filter(p => p.is_builtin).length} 个内置)
-                    </span>
+                    <span className="text-xs font-normal text-zinc-400 ml-2">({presets.filter(p => p.is_builtin).length} 个内置)</span>
                   )}
                 </h4>
                 {presets.length === 0 ? (
@@ -580,32 +486,18 @@ export default function ChatPage() {
                       <div
                         key={preset.id}
                         className={`relative group border rounded-xl p-3 cursor-pointer hover:border-accent-400 hover:shadow-sm transition ${
-                          systemPrompt === preset.prompt
-                            ? 'border-accent-500 bg-accent-50 ring-1 ring-accent-500'
-                            : 'border-zinc-200'
+                          pendingSystemPrompt === preset.prompt ? 'border-accent-500 bg-accent-50 ring-1 ring-accent-500' : 'border-zinc-200'
                         }`}
                       >
-                        <div onClick={() => setSystemPrompt(preset.prompt)}>
+                        <div onClick={() => setPendingSystemPrompt(preset.prompt)}>
                           <div className="flex items-center gap-1.5 mb-1">
-                            {preset.is_builtin && (
-                              <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">
-                                预置
-                              </span>
-                            )}
+                            {preset.is_builtin && <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">预置</span>}
                             <h5 className="text-sm font-semibold text-zinc-800">{preset.name}</h5>
                           </div>
-                          {preset.description && (
-                            <p className="text-xs text-zinc-500 line-clamp-2">{preset.description}</p>
-                          )}
+                          {preset.description && <p className="text-xs text-zinc-500 line-clamp-2">{preset.description}</p>}
                         </div>
                         {!preset.is_builtin && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleDeletePreset(preset.id)
-                            }}
-                            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition"
-                          >
+                          <button onClick={(e) => { e.stopPropagation(); handleDeletePreset(preset.id) }} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition">
                             <Trash2 className="w-3.5 h-3.5 text-red-500" />
                           </button>
                         )}
@@ -613,24 +505,15 @@ export default function ChatPage() {
                     ))}
                   </div>
                 )}
-                <p className="text-xs text-zinc-400 mt-2">
-                  管理员可在管理后台添加更多内置预设提示词
-                </p>
               </div>
             </div>
 
             <div className="flex items-center justify-end gap-2 p-4 border-t border-zinc-200">
-              <button
-                onClick={() => setShowSystemPromptEditor(false)}
-                className="px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100 rounded-lg transition"
-              >
+              <button onClick={() => setShowNewSessionDialog(false)} className="px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100 rounded-lg transition">
                 取消
               </button>
-              <button
-                onClick={() => setShowSystemPromptEditor(false)}
-                className="px-4 py-2 text-sm bg-accent-600 text-white rounded-lg hover:bg-accent-700 transition"
-              >
-                确定
+              <button onClick={handleCreateSession} className="px-6 py-2 text-sm bg-accent-600 text-white rounded-lg hover:bg-accent-700 transition">
+                开始对话
               </button>
             </div>
           </div>
