@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # File storage
     UPLOAD_DIR: str = "./data/images"
     
+    # Public URL for images (used to construct full image URLs)
+    PUBLIC_IMAGE_URL_PREFIX: str = "/data/images"
+    
     class Config:
         env_file = ".env"
 

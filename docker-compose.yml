@@ -25,3 +25,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    # Mount the same data volume so nginx can serve images directly
+    volumes:
+      - ./data/images:/usr/share/nginx/html/data/images:ro

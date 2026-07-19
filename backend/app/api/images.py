@@ -4,6 +4,7 @@ from typing import List
 import httpx
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_current_admin
+from app.core.config import get_settings
 from app.models.schemas import *
 from app.models.models import GeneratedImage, ImageLike, User
 from app.services.ai_service import generate_image_seedream
@@ -11,6 +12,19 @@ import uuid
 import os
 
 router = APIRouter(prefix="/images", tags=["images"])
+settings = get_settings()
+
+def _get_full_image_url(image_path: str) -> str:
+    """Convert local image path to full URL"""
+    if not image_path:
+        return ""
+    # If already a full URL, return as is
+    if image_path.startswith("http://") or image_path.startswith("https://"):
+        return image_path
+    # If starts with /data/images/, prepend the API base
+    if image_path.startswith("/data/images/"):
+        return image_path
+    return image_path
 
 @router.post("/generate", response_model=ImageResponse)
 async def generate_image(request: ImageGenerateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -53,7 +67,7 @@ async def generate_image(request: ImageGenerateRequest, db: Session = Depends(ge
         return {
             "id": image.id,
             "prompt": image.prompt,
-            "image_url": image.image_url,
+            "image_url": _get_full_image_url(image.image_url),
             "is_public": image.is_public,
             "likes": image.likes,
             "created_at": image.created_at,
@@ -71,7 +85,7 @@ def get_gallery(db: Session = Depends(get_db), current_user: User = Depends(get_
         result.append({
             "id": img.id,
             "prompt": img.prompt,
-            "image_url": img.image_url,
+            "image_url": _get_full_image_url(img.image_url),
             "is_public": img.is_public,
             "likes": img.likes,
             "created_at": img.created_at,
@@ -87,7 +101,7 @@ def get_my_images(db: Session = Depends(get_db), current_user: User = Depends(ge
         result.append({
             "id": img.id,
             "prompt": img.prompt,
-            "image_url": img.image_url,
+            "image_url": _get_full_image_url(img.image_url),
             "is_public": img.is_public,
             "likes": img.likes,
             "created_at": img.created_at,
@@ -140,7 +154,7 @@ def get_all_images(db: Session = Depends(get_db), admin: User = Depends(get_curr
         result.append({
             "id": img.id,
             "prompt": img.prompt,
-            "image_url": img.image_url,
+            "image_url": _get_full_image_url(img.image_url),
             "is_public": img.is_public,
             "likes": img.likes,
             "created_at": img.created_at,
