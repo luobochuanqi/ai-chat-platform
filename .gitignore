@@ -36,6 +36,7 @@ __pycache__/
 env/
 venv/
 .venv/
+.superpowers/
 
 # 数据
 data/

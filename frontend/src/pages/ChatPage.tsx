@@ -1,20 +1,20 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuthStore } from '../store/authStore'
 import api from '../services/api'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeHighlight from 'rehype-highlight'
-import rehypeKatex from 'rehype-katex'
+import { AppLayout } from '../components/layout/AppLayout'
+import { MessageBubble } from '../components/chat/MessageBubble'
+import { SKILLS, ToolCall } from '../components/SkillIcons'
+import { motion } from 'framer-motion'
+import { Globe, Plus, Settings, X } from 'lucide-react'
 import 'highlight.js/styles/github-dark.css'
 import 'katex/dist/katex.min.css'
-import { Globe, Sparkles, X, Plus, Trash2 } from 'lucide-react'
 
 interface Message {
   id: number
   role: string
   content: string
   tokens_used?: number
+  tool_calls?: ToolCall[]
+  search_results?: { title: string; url: string; snippet: string }[]
   created_at: string
 }
 
@@ -26,53 +26,25 @@ interface Session {
   message_count: number
 }
 
-interface SystemPromptItem {
+interface SessionDetail {
   id: number
-  name: string
-  description?: string
-  prompt: string
-  is_builtin: boolean
-  user_id?: number
-  is_active: boolean
-  created_at: string
+  title: string
+  system_prompt?: string | null
+  enabled_skills?: string[]
+  messages: Message[]
 }
 
-const MarkdownComponents = {
-  code({ node, inline, className, children, ...props }: any) {
-    const match = /language-(\w+)/.exec(className || '')
-    return !inline && match ? (
-      <div className="relative">
-        <div className="absolute top-0 right-0 px-2 py-1 text-xs text-zinc-400 bg-zinc-800 rounded-bl">
-          {match[1]}
-        </div>
-        <code className={className} {...props}>{children}</code>
-      </div>
-    ) : (
-      <code className="bg-zinc-100 px-1 py-0.5 rounded text-sm font-mono text-zinc-800" {...props}>{children}</code>
-    )
-  },
-  p({ children }: any) { return <p className="mb-2 last:mb-0">{children}</p> },
-  ul({ children }: any) { return <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul> },
-  ol({ children }: any) { return <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol> },
-  h1({ children }: any) { return <h1 className="text-xl font-bold mb-2">{children}</h1> },
-  h2({ children }: any) { return <h2 className="text-lg font-bold mb-2">{children}</h2> },
-  h3({ children }: any) { return <h3 className="text-base font-bold mb-2">{children}</h3> },
-  blockquote({ children }: any) {
-    return <blockquote className="border-l-4 border-accent-400 pl-4 italic my-2 text-zinc-600">{children}</blockquote>
-  },
-  table({ children }: any) {
-    return <div className="overflow-x-auto mb-2"><table className="min-w-full border-collapse border border-zinc-300">{children}</table></div>
-  },
-  thead({ children }: any) { return <thead className="bg-zinc-100">{children}</thead> },
-  th({ children }: any) { return <th className="border border-zinc-300 px-3 py-2 text-left text-sm font-semibold">{children}</th> },
-  td({ children }: any) { return <td className="border border-zinc-300 px-3 py-2 text-sm">{children}</td> },
-}
+const QUICK_STARTS = [
+  '写一首关于秋天的小诗',
+  '用大白话解释什么是勾股定理',
+  '讲一个冷笑话',
+  '帮我算 1234 × 5678 等于多少',
+]
 
 export default function ChatPage() {
-  const navigate = useNavigate()
-  const { user, logout } = useAuthStore()
   const [sessions, setSessions] = useState<Session[]>([])
   const [currentSession, setCurrentSession] = useState<number | null>(null)
+  const [currentSessionData, setCurrentSessionData] = useState<SessionDetail | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -80,11 +52,11 @@ export default function ChatPage() {
   const [editTitle, setEditTitle] = useState('')
   const [webSearchEnabled, setWebSearchEnabled] = useState(false)
 
-  const [showNewSessionDialog, setShowNewSessionDialog] = useState(false)
-  const [pendingSystemPrompt, setPendingSystemPrompt] = useState('')
-  const [pendingPromptName, setPendingPromptName] = useState('')
-  const [pendingPromptDesc, setPendingPromptDesc] = useState('')
-  const [presets, setPresets] = useState<SystemPromptItem[]>([])
+  // 编辑面板（slide-over）
+  const [showSettings, setShowSettings] = useState(false)
+  const [editorTitle, setEditorTitle] = useState('')
+  const [editorSystemPrompt, setEditorSystemPrompt] = useState('')
+  const [editorSkills, setEditorSkills] = useState<string[]>([])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -96,26 +68,18 @@ export default function ChatPage() {
       const response = await api.get('/chat/sessions')
       setSessions(response.data)
     } catch (error) {
-      console.error('Failed to load sessions:', error)
+      console.error('[Chat] 加载会话列表失败:', error)
     }
   }
 
   const loadSessionMessages = async (sessionId: number) => {
     try {
       const response = await api.get(`/chat/sessions/${sessionId}`)
+      setCurrentSessionData(response.data)
       setMessages(response.data.messages)
       setCurrentSession(sessionId)
     } catch (error) {
-      console.error('Failed to load session:', error)
-    }
-  }
-
-  const loadPresets = async () => {
-    try {
-      const response = await api.get('/chat/system-prompts')
-      setPresets(response.data)
-    } catch (error) {
-      console.error('Failed to load presets:', error)
+      console.error('[Chat] 加载会话消息失败:', error)
     }
   }
 
@@ -129,47 +93,55 @@ export default function ChatPage() {
         setSessions(prev => prev.map(s =>
           s.id === sessionId ? { ...s, title: response.data.title } : s
         ))
+        setCurrentSessionData(prev => prev && prev.id === sessionId ? { ...prev, title: response.data.title } : prev)
       }
     } catch (error) {
-      console.error('Failed to generate title:', error)
+      console.error('[Chat] 生成标题失败:', error)
     }
   }
 
-  const openNewSessionDialog = () => {
-    setPendingSystemPrompt('')
-    setPendingPromptName('')
-    setPendingPromptDesc('')
-    loadPresets()
-    setShowNewSessionDialog(true)
-  }
-
+  // P2: 新建一键创建（无弹窗，默认 skills 全启）
   const handleCreateSession = async () => {
     try {
       const response = await api.post('/chat/sessions', {
         title: '新会话',
-        system_prompt: pendingSystemPrompt || undefined
+        enabled_skills: SKILLS.map(s => s.name),
       })
       const newSession = response.data
       setSessions([newSession, ...sessions])
       setCurrentSession(newSession.id)
+      setCurrentSessionData({ ...newSession, messages: [] })
       setMessages([])
-      setShowNewSessionDialog(false)
-      setPendingSystemPrompt('')
     } catch (error) {
-      console.error('Failed to create session:', error)
+      console.error('[Chat] 创建会话失败:', error)
     }
   }
 
+  const handleQuickStart = async (question: string) => {
+    try {
+      const response = await api.post('/chat/sessions', { title: '新会话', enabled_skills: SKILLS.map(s => s.name) })
+      const newSession = response.data
+      setSessions([newSession, ...sessions])
+      setCurrentSession(newSession.id)
+      setCurrentSessionData({ ...newSession, messages: [] })
+      setMessages([])
+      setInput(question)
+    } catch (error) {
+      console.error('[Chat] 快速开始失败:', error)
+    }
+  }
+
+  // P2: update 改 body（支持 title/system_prompt/enabled_skills）
   const handleUpdateTitle = async (sessionId: number) => {
     if (!editTitle.trim()) { setEditingSession(null); return }
     try {
-      await api.put(`/chat/sessions/${sessionId}`, null, { params: { title: editTitle.trim() } })
+      await api.put(`/chat/sessions/${sessionId}`, { title: editTitle.trim() })
       setSessions(prev => prev.map(s =>
         s.id === sessionId ? { ...s, title: editTitle.trim() } : s
       ))
       setEditingSession(null)
     } catch (error) {
-      console.error('Failed to update title:', error)
+      console.error('[Chat] 更新标题失败:', error)
     }
   }
 
@@ -201,7 +173,7 @@ export default function ChatPage() {
         generateSessionTitle(currentSession, userMessage)
       }
     } catch (error: any) {
-      console.error('Failed to send message:', error)
+      console.error('[Chat] 发送消息失败:', error)
       const errorMsg: Message = {
         id: Date.now() + 1,
         role: 'assistant',
@@ -221,35 +193,45 @@ export default function ChatPage() {
       setSessions(sessions.filter(s => s.id !== sessionId))
       if (currentSession === sessionId) {
         setCurrentSession(null)
+        setCurrentSessionData(null)
         setMessages([])
       }
     } catch (error) {
-      console.error('Failed to delete session:', error)
+      console.error('[Chat] 删除会话失败:', error)
     }
   }
 
-  const handleSaveCustomPreset = async () => {
-    if (!pendingSystemPrompt.trim() || !pendingPromptName.trim()) return
+  // P2: 打开会话设置（slide-over）
+  const openSettings = () => {
+    if (!currentSessionData) return
+    setEditorTitle(currentSessionData.title || '')
+    setEditorSystemPrompt(currentSessionData.system_prompt || '')
+    setEditorSkills(currentSessionData.enabled_skills || [])
+    setShowSettings(true)
+  }
+
+  const toggleEditorSkill = (name: string) => {
+    setEditorSkills(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name])
+  }
+
+  const saveSettings = async () => {
+    if (!currentSession) return
     try {
-      const response = await api.post('/chat/system-prompts', {
-        name: pendingPromptName,
-        description: pendingPromptDesc,
-        prompt: pendingSystemPrompt
+      await api.put(`/chat/sessions/${currentSession}`, {
+        title: editorTitle.trim() || '新会话',
+        system_prompt: editorSystemPrompt.trim() || null,
+        enabled_skills: editorSkills,
       })
-      setPresets(prev => [...prev, response.data])
-      setPendingPromptName('')
-      setPendingPromptDesc('')
+      setCurrentSessionData(prev => prev ? {
+        ...prev,
+        title: editorTitle.trim() || '新会话',
+        system_prompt: editorSystemPrompt.trim() || null,
+        enabled_skills: editorSkills,
+      } : prev)
+      setSessions(prev => prev.map(s => s.id === currentSession ? { ...s, title: editorTitle.trim() || '新会话' } : s))
+      setShowSettings(false)
     } catch (error) {
-      console.error('Failed to save preset:', error)
-    }
-  }
-
-  const handleDeletePreset = async (presetId: number) => {
-    try {
-      await api.delete(`/chat/system-prompts/${presetId}`)
-      setPresets(prev => prev.filter(p => p.id !== presetId))
-    } catch (error) {
-      console.error('Failed to delete preset:', error)
+      console.error('[Chat] 保存设置失败:', error)
     }
   }
 
@@ -264,131 +246,108 @@ export default function ChatPage() {
     }
   }
 
-  const defaultSystemPrompt = '你是一个有帮助的AI助手。请用简洁清晰的中文回答用户的问题。'
-
   return (
-    <div className="flex h-screen bg-zinc-50">
-      {/* Sidebar */}
-      <div className="w-64 bg-white border-r border-zinc-200 flex flex-col">
-        <div className="p-4 border-b border-zinc-200">
-          <h1 className="text-lg font-bold text-zinc-900">AI 探索平台</h1>
-          <p className="text-sm text-zinc-500">{user?.nickname}</p>
-        </div>
-
-        <div className="p-3">
-          <button
-            onClick={openNewSessionDialog}
-            className="w-full flex items-center justify-center gap-2 bg-accent-600 text-white py-2 rounded-lg hover:bg-accent-700 transition"
-          >
-            <span className="text-lg">+</span>
-            新建会话
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-3">
-          <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2 px-1">会话列表</h3>
-          {sessions.map(session => (
-            <div
-              key={session.id}
-              onClick={() => loadSessionMessages(session.id)}
-              className={`group flex items-center justify-between p-2 rounded-lg cursor-pointer mb-1 transition ${
-                currentSession === session.id ? 'bg-accent-50 text-accent-700' : 'hover:bg-zinc-100'
-              }`}
+    <AppLayout
+      sidebarExtra={
+        <>
+          <div className="p-3 border-b border-surface2">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleCreateSession}
+              className="w-full flex items-center justify-center gap-2 bg-mauve text-base py-2 rounded hover:bg-mauve/90 transition text-sm font-medium"
             >
-              <div className="flex-1 min-w-0">
-                {editingSession === session.id ? (
-                  <input
-                    autoFocus
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    onBlur={() => handleUpdateTitle(session.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleUpdateTitle(session.id)
-                      if (e.key === 'Escape') setEditingSession(null)
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-full text-sm px-1 py-0.5 border border-accent-300 rounded outline-none"
-                  />
-                ) : (
-                  <p className="text-sm font-medium truncate">{session.title}</p>
-                )}
-                <p className="text-xs text-zinc-400">{session.message_count} 条消息</p>
+              <Plus className="w-4 h-4" /> 新建会话
+            </motion.button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-2 py-2">
+            <h3 className="text-[10px] font-medium text-subtext0 uppercase tracking-wider mb-2 px-1">会话列表</h3>
+            {sessions.map(session => (
+              <div
+                key={session.id}
+                onClick={() => loadSessionMessages(session.id)}
+                className={`group flex items-center justify-between p-2 rounded cursor-pointer mb-0.5 transition hover:translate-x-0.5 border-l-2 ${
+                  currentSession === session.id ? 'bg-mantle text-ctext font-medium border-mauve' : 'hover:bg-mantle/60 text-subtext1 border-transparent'
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  {editingSession === session.id ? (
+                    <input
+                      autoFocus
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      onBlur={() => handleUpdateTitle(session.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleUpdateTitle(session.id)
+                        if (e.key === 'Escape') setEditingSession(null)
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-full text-sm px-1 py-0.5 border border-mauve rounded outline-none bg-base"
+                    />
+                  ) : (
+                    <p className={`text-sm truncate ${currentSession === session.id ? 'font-medium' : ''}`}>{session.title}</p>
+                  )}
+                  <p className="text-xs text-subtext0">{session.message_count} 条</p>
+                </div>
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setEditingSession(session.id); setEditTitle(session.title) }}
+                    className="p-1 hover:bg-mauve/15 rounded text-mauve text-xs"
+                  >编辑</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteSession(session.id) }}
+                    className="p-1 hover:bg-red/15 rounded text-red text-xs"
+                  >删除</button>
+                </div>
               </div>
-              <div className="flex items-center gap-0.5">
-                <button
-                  onClick={(e) => { e.stopPropagation(); setEditingSession(session.id); setEditTitle(session.title) }}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-blue-100 rounded transition text-blue-500 text-xs"
-                >
-                  编辑
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteSession(session.id) }}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition text-red-500 text-xs"
-                >
-                  删除
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="p-3 border-t border-zinc-200 space-y-1">
-          <button onClick={() => navigate('/chat')} className="w-full text-left px-3 py-2 text-sm font-medium text-accent-700 bg-accent-50 rounded-lg">AI 对话</button>
-          <button onClick={() => navigate('/image')} className="w-full text-left px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 rounded-lg transition">AI 生图</button>
-          <button onClick={() => navigate('/gallery')} className="w-full text-left px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 rounded-lg transition">作品墙</button>
-          {user?.is_admin && (
-            <button onClick={() => navigate('/admin')} className="w-full text-left px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 rounded-lg transition">管理后台</button>
-          )}
-        </div>
-
-        <div className="p-3 border-t border-zinc-200">
-          <button onClick={logout} className="w-full text-left px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition">退出登录</button>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+            ))}
+          </div>
+        </>
+      }
+    >
+      <div className="flex-1 flex flex-col h-full">
         {currentSession ? (
           <>
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* P2: 会话头（标题 + 设置按钮） */}
+            <div className="px-6 py-3 border-b border-surface2 flex items-center justify-between bg-base">
+              <h2 className="font-serif text-lg text-ctext truncate">{currentSessionData?.title || '新会话'}</h2>
+              <button
+                onClick={openSettings}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-subtext1 hover:text-ctext hover:bg-surface0 rounded transition"
+              >
+                <Settings className="w-4 h-4" /> 设置
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {messages.map((message) => (
-                <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-3xl px-4 py-3 rounded-2xl ${
-                    message.role === 'user' ? 'bg-accent-600 text-white' : 'bg-white border border-zinc-200 text-zinc-900'
-                  }`}>
-                    {message.role === 'user' ? (
-                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    ) : (
-                      <div className="prose prose-sm max-w-none">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight, rehypeKatex]} components={MarkdownComponents}>
-                          {message.content}
-                        </ReactMarkdown>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <MessageBubble key={message.id} message={message} />
               ))}
               {loading && (
                 <div className="flex justify-start">
-                  <div className="bg-white border border-zinc-200 px-4 py-3 rounded-2xl">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                    </div>
+                  <div className="bg-surface0 border border-surface2 px-4 py-3 rounded flex items-center gap-2">
+                    <span className="text-sm text-subtext1">AI 正在思考</span>
+                    {[0, 150, 300].map(delay => (
+                      <motion.div
+                        key={delay}
+                        className="w-3 h-px bg-mauve"
+                        animate={{ opacity: [0.3, 1, 0.3], scaleX: [0.6, 1, 0.6] }}
+                        transition={{ duration: 1, repeat: Infinity, delay: delay / 1000, ease: 'easeInOut' }}
+                      />
+                    ))}
                   </div>
                 </div>
               )}
               <div ref={messagesEndRef} />
             </div>
 
-            <div className="p-4 bg-white border-t border-zinc-200">
+            <div className="p-4 bg-mantle border-t border-surface2">
               <div className="max-w-4xl mx-auto space-y-2">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition ${
-                      webSearchEnabled ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-zinc-100 text-zinc-600 border border-zinc-200 hover:bg-zinc-200'
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs transition border ${
+                      webSearchEnabled ? 'bg-blue/15 text-blue border-blue/40' : 'bg-base text-subtext1 border-surface2 hover:bg-surface0'
                     }`}
                   >
                     <Globe className="w-3.5 h-3.5" />
@@ -400,125 +359,146 @@ export default function ChatPage() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="输入消息... (按 Enter 发送)"
+                    placeholder="输入消息... (Enter 发送，Shift+Enter 换行)"
                     rows={1}
-                    className="flex-1 px-4 py-3 border border-zinc-300 rounded-xl resize-none focus:ring-2 focus:ring-accent-500 focus:border-transparent outline-none transition min-h-[44px]"
+                    className="flex-1 px-4 py-3 bg-base border border-surface2 rounded resize-none focus:border-mauve focus:ring-1 focus:ring-mauve outline-none transition min-h-[44px] text-sm"
                   />
-                  <button
+                  <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.96 }}
                     onClick={handleSendMessage}
                     disabled={loading || !input.trim()}
-                    className="px-6 py-3 bg-accent-600 text-white rounded-xl font-medium hover:bg-accent-700 transition disabled:opacity-50"
+                    className="px-6 py-3 bg-mauve text-base rounded font-medium hover:bg-mauve/90 transition disabled:opacity-40 text-sm"
                   >
                     发送
-                  </button>
+                  </motion.button>
                 </div>
               </div>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <Sparkles className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
-              <p className="text-zinc-500 mb-6">选择一个会话或创建新会话开始对话</p>
-              <button onClick={openNewSessionDialog} className="px-8 py-3 bg-accent-600 text-white rounded-xl font-medium hover:bg-accent-700 transition shadow-lg shadow-accent-200">
-                开始新对话
-              </button>
+          <div className="flex-1 overflow-y-auto flex items-center">
+            <div className="max-w-2xl mx-auto px-6 py-12 w-full">
+              <div className="flex justify-center items-center gap-5 mb-8">
+                {[
+                  { d: 'M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8 5.8 21.3l2.4-7.4L2 9.4h7.6z', size: 38, op: 1 },
+                  { d: 'M4 12 a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0', size: 28, op: 0.5 },
+                  { d: 'M4 12 L12 4 L20 12 L12 20 Z', size: 24, op: 0.28 },
+                ].map((s, i) => (
+                  <motion.svg key={i} width={s.size} height={s.size} viewBox="0 0 24 24" fill="none" stroke="#5C5F77" strokeOpacity={s.op} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round"
+                    animate={{ y: [0, -8, 0] }}
+                    transition={{ duration: 2 + i * 0.4, repeat: Infinity, ease: 'easeInOut', delay: i * 0.3 }}
+                  ><path d={s.d} /></motion.svg>
+                ))}
+              </div>
+              <motion.h2
+                initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                className="font-serif text-5xl text-center text-ctext tracking-tight mb-3"
+              >和 AI <span className="italic text-mauve">聊点</span>什么？</motion.h2>
+              <motion.p
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
+                className="text-center text-subtext1 mb-10"
+              >选一个问题开始，或自己出题</motion.p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {QUICK_STARTS.map((q, i) => (
+                  <motion.button
+                    key={q}
+                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 + i * 0.08, ease: [0.22, 1, 0.36, 1] }}
+                    whileHover={{ scale: 1.02, y: -3 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handleQuickStart(q)}
+                    className="text-left p-4 bg-base border border-surface2 rounded-lg hover:border-mauve hover:shadow-md transition flex items-start gap-3"
+                  >
+                    <span className="font-serif text-lg text-mauve leading-none mt-0.5">{i + 1}</span>
+                    <span className="text-sm text-ctext">{q}</span>
+                  </motion.button>
+                ))}
+              </div>
+              <div className="text-center mt-8">
+                <motion.button
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                  onClick={handleCreateSession}
+                  className="px-6 py-2.5 border border-mauve text-mauve rounded hover:bg-mauve/10 transition text-sm font-medium"
+                >空白新建会话</motion.button>
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* New Session Dialog */}
-      {showNewSessionDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col mx-4">
-            <div className="flex items-center justify-between p-5 border-b border-zinc-200">
-              <h3 className="text-lg font-bold text-zinc-900">新建会话 - 设置系统提示词</h3>
-              <button onClick={() => setShowNewSessionDialog(false)} className="p-1 hover:bg-zinc-100 rounded-lg transition">
-                <X className="w-5 h-5 text-zinc-500" />
+      {/* P2: 会话设置 slide-over 面板（A 形态） */}
+      {showSettings && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setShowSettings(false)} />
+          <motion.div
+            initial={{ x: '100%' }} animate={{ x: 0 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            className="fixed right-0 top-0 bottom-0 w-[30rem] bg-base border-l-2 border-overlay0 z-50 flex flex-col shadow-2xl"
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-surface2">
+              <h3 className="font-serif text-lg text-ctext">会话设置</h3>
+              <button onClick={() => setShowSettings(false)} className="p-1 hover:bg-surface0 rounded transition">
+                <X className="w-4 h-4 text-subtext0" />
               </button>
             </div>
-
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 space-y-5">
               <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-1">
-                  系统提示词
-                </label>
-                <textarea
-                  value={pendingSystemPrompt}
-                  onChange={(e) => setPendingSystemPrompt(e.target.value)}
-                  placeholder={defaultSystemPrompt}
-                  rows={5}
-                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg resize-none focus:ring-2 focus:ring-accent-500 outline-none text-sm"
+                <label className="block text-sm font-medium text-ctext mb-1">标题</label>
+                <input
+                  value={editorTitle}
+                  onChange={(e) => setEditorTitle(e.target.value)}
+                  className="w-full px-3 py-2 bg-mantle border border-surface2 rounded focus:border-mauve outline-none text-sm"
                 />
-                <p className="text-xs text-zinc-400 mt-1">
-                  设定 AI 的行为模式。留空使用默认提示词。创建后不可修改。
-                </p>
               </div>
-
-              {/* Save as Custom Preset */}
-              <div className="bg-zinc-50 rounded-xl p-4 space-y-2">
-                <h4 className="text-sm font-semibold text-zinc-700">保存为我的预设</h4>
-                <input value={pendingPromptName} onChange={(e) => setPendingPromptName(e.target.value)} placeholder="预设名称" className="w-full px-3 py-2 text-sm border border-zinc-300 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none" />
-                <input value={pendingPromptDesc} onChange={(e) => setPendingPromptDesc(e.target.value)} placeholder="简短描述（可选）" className="w-full px-3 py-2 text-sm border border-zinc-300 rounded-lg focus:ring-2 focus:ring-accent-500 outline-none" />
-                <button
-                  onClick={handleSaveCustomPreset}
-                  disabled={!pendingSystemPrompt.trim() || !pendingPromptName.trim()}
-                  className="flex items-center gap-2 px-4 py-2 bg-accent-600 text-white text-sm rounded-lg hover:bg-accent-700 transition disabled:opacity-50"
-                >
-                  <Plus className="w-4 h-4" /> 保存预设
-                </button>
-              </div>
-
-              {/* Preset List */}
               <div>
-                <h4 className="text-sm font-semibold text-zinc-700 mb-2">
-                  从预设中选择
-                  {presets.filter(p => p.is_builtin).length > 0 && (
-                    <span className="text-xs font-normal text-zinc-400 ml-2">({presets.filter(p => p.is_builtin).length} 个内置)</span>
-                  )}
-                </h4>
-                {presets.length === 0 ? (
-                  <p className="text-sm text-zinc-400">暂无预设提示词</p>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {presets.map((preset) => (
-                      <div
-                        key={preset.id}
-                        className={`relative group border rounded-xl p-3 cursor-pointer hover:border-accent-400 hover:shadow-sm transition ${
-                          pendingSystemPrompt === preset.prompt ? 'border-accent-500 bg-accent-50 ring-1 ring-accent-500' : 'border-zinc-200'
+                <label className="block text-sm font-medium text-ctext mb-1">系统提示词（人设）</label>
+                <textarea
+                  value={editorSystemPrompt}
+                  onChange={(e) => setEditorSystemPrompt(e.target.value)}
+                  rows={12}
+                  placeholder="告诉 AI 它应该怎么回答，比如「像历史老师一样给我讲故事」"
+                  className="w-full px-3 py-2 bg-mantle border border-surface2 rounded resize-y focus:border-mauve outline-none text-sm"
+                />
+                <p className="text-xs text-subtext0 mt-1">留空 = 默认助手。随时可改。</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ctext mb-1">技能（Skills）</label>
+                <div className="space-y-1.5">
+                  {SKILLS.map(skill => {
+                    const checked = editorSkills.includes(skill.name)
+                    const Icon = skill.icon
+                    return (
+                      <label
+                        key={skill.name}
+                        className={`flex items-center gap-2 p-2 border rounded cursor-pointer transition ${
+                          checked ? 'border-mauve bg-mauve/8' : 'border-surface2 hover:bg-surface0/50'
                         }`}
                       >
-                        <div onClick={() => setPendingSystemPrompt(preset.prompt)}>
-                          <div className="flex items-center gap-1.5 mb-1">
-                            {preset.is_builtin && <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">预置</span>}
-                            <h5 className="text-sm font-semibold text-zinc-800">{preset.name}</h5>
-                          </div>
-                          {preset.description && <p className="text-xs text-zinc-500 line-clamp-2">{preset.description}</p>}
-                        </div>
-                        {!preset.is_builtin && (
-                          <button onClick={(e) => { e.stopPropagation(); handleDeletePreset(preset.id) }} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition">
-                            <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                        <input type="checkbox" checked={checked} onChange={() => toggleEditorSkill(skill.name)} />
+                        <Icon className={`w-4 h-4 ${skill.colorClass}`} />
+                        <span className="text-sm text-ctext">{skill.label}</span>
+                      </label>
+                    )
+                  })}
+                </div>
               </div>
             </div>
-
-            <div className="flex items-center justify-end gap-2 p-4 border-t border-zinc-200">
-              <button onClick={() => setShowNewSessionDialog(false)} className="px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100 rounded-lg transition">
-                取消
-              </button>
-              <button onClick={handleCreateSession} className="px-6 py-2 text-sm bg-accent-600 text-white rounded-lg hover:bg-accent-700 transition">
-                开始对话
-              </button>
+            <div className="px-4 py-3 border-t border-surface2 flex gap-2">
+              <button
+                onClick={() => setShowSettings(false)}
+                className="flex-1 px-4 py-2 border border-surface2 text-subtext1 rounded hover:bg-surface0 transition text-sm"
+              >取消</button>
+              <motion.button
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                onClick={saveSettings}
+                className="flex-1 px-4 py-2 bg-mauve text-base rounded hover:bg-mauve/90 transition text-sm font-medium"
+              >保存</motion.button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </>
       )}
-    </div>
+    </AppLayout>
   )
 }

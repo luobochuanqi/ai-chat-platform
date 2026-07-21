@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, Float, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -28,9 +28,10 @@ class ChatSession(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     title = Column(String(200), default="新会话")
     system_prompt = Column(Text, nullable=True)
+    enabled_skills = Column(JSON, default=list)  # 启用的 skill 名列表，空=不启用（走原路径）
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     user = relationship("User", back_populates="sessions")
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
 
@@ -54,8 +55,9 @@ class ChatMessage(Base):
     role = Column(String(20), nullable=False)  # user, assistant, system
     content = Column(Text, nullable=False)
     tokens_used = Column(Integer, nullable=True)
+    tool_calls = Column(JSON, nullable=True)  # AI 的 skill 调用记录，无则 null
     created_at = Column(DateTime, default=datetime.utcnow)
-    
+
     session = relationship("ChatSession", back_populates="messages")
 
 class GeneratedImage(Base):

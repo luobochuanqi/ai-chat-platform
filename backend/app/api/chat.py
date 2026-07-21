@@ -6,6 +6,8 @@ from app.core.deps import get_current_user, get_current_admin
 from app.models.schemas import *
 from app.models.models import ChatSession, ChatMessage, User, SystemPrompt
 from app.services.ai_service import chat_with_deepseek
+from app.services.skill_runner import run_chat_with_skills
+from app.skills import SKILL_REGISTRY
 
 try:
     from duckduckgo_search import DDGS
@@ -17,10 +19,20 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 @router.post("/sessions", response_model=ChatSessionResponse)
 def create_session(data: ChatSessionCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # 确定启用的 skills：未传(None)=默认全部启用；传入则逐个校验必须已注册
+    if data.enabled_skills is None:
+        enabled_skills = SKILL_REGISTRY.list_names()
+    else:
+        valid_names = set(SKILL_REGISTRY.list_names())
+        for skill_name in data.enabled_skills:
+            if skill_name not in valid_names:
+                raise HTTPException(status_code=400, detail=f"未知的 skill: {skill_name}")
+        enabled_skills = data.enabled_skills
     session = ChatSession(
         user_id=current_user.id,
         title=data.title,
-        system_prompt=data.system_prompt
+        system_prompt=data.system_prompt,
+        enabled_skills=enabled_skills,
     )
     db.add(session)
     db.commit()
@@ -53,15 +65,26 @@ def get_session(session_id: int, db: Session = Depends(get_db), current_user: Us
         "title": session.title,
         "created_at": session.created_at,
         "updated_at": session.updated_at,
+        "enabled_skills": session.enabled_skills or [],
         "messages": messages
     }
 
 @router.put("/sessions/{session_id}")
-def update_session_title(session_id: int, title: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_session(session_id: int, data: SessionUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     session = db.query(ChatSession).filter(ChatSession.id == session_id, ChatSession.user_id == current_user.id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    session.title = title
+    if data.title is not None:
+        session.title = data.title
+    if data.system_prompt is not None:
+        session.system_prompt = data.system_prompt
+    if data.enabled_skills is not None:
+        # 校验 skill 名必须已注册（不兜底默认值）
+        valid_names = set(SKILL_REGISTRY.list_names())
+        for skill_name in data.enabled_skills:
+            if skill_name not in valid_names:
+                raise HTTPException(status_code=400, detail=f"未知的 skill: {skill_name}")
+        session.enabled_skills = data.enabled_skills
     db.commit()
     db.refresh(session)
     return session
@@ -132,14 +155,19 @@ async def send_message(session_id: int, message: ChatMessageCreate, db: Session 
         messages.append({"role": "system", "content": session.system_prompt})
     messages.extend([{"role": m.role, "content": m.content} for m in history])
     
-    # Web search if enabled
+    # Web search if enabled（P2: 同时收集结构化结果返回前端展示，不落库）
+    search_results = None
     if message.web_search and DDGS_AVAILABLE:
         try:
             with DDGS() as ddgs:
                 results = list(ddgs.text(message.content, max_results=3))
                 if results:
+                    search_results = [
+                        {"title": r.get("title", ""), "url": r.get("href") or r.get("url", ""), "snippet": r.get("body", "")}
+                        for r in results
+                    ]
                     search_text = "\n\n".join([
-                        f"[{i+1}] {r.get('title', '')}: {r.get('body', '')}" 
+                        f"[{i+1}] {r.get('title', '')}: {r.get('body', '')}"
                         for i, r in enumerate(results)
                     ])
                     messages[-1]["content"] = f"{message.content}\n\n以下是我搜索到的相关信息：\n{search_text}\n\n请根据以上信息回答我的问题。"
@@ -148,16 +176,27 @@ async def send_message(session_id: int, message: ChatMessageCreate, db: Session 
     elif message.web_search and not DDGS_AVAILABLE:
         print("Web search requested but duckduckgo_search not available")
     
-    # Call DeepSeek API
+    # Call DeepSeek API：启用 skills 时走 function-calling 循环，否则保持原路径（教学顺序不被破坏）
+    enabled_skills = session.enabled_skills or []
+    tool_call_log = None
     try:
-        response = await chat_with_deepseek(messages)
-        assistant_content = response["choices"][0]["message"]["content"]
-        tokens_used = response.get("usage", {}).get("total_tokens", 0)
+        if enabled_skills:
+            assistant_content, tool_call_log, tokens_used = await run_chat_with_skills(messages, enabled_skills)
+        else:
+            response = await chat_with_deepseek(messages)
+            assistant_content = response["choices"][0]["message"]["content"]
+            tokens_used = response.get("usage", {}).get("total_tokens", 0)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI service error: {str(e)}")
-    
-    # Save assistant message with token count
-    assistant_msg = ChatMessage(session_id=session_id, role="assistant", content=assistant_content, tokens_used=tokens_used)
+
+    # Save assistant message with token count (and skill call log if any)
+    assistant_msg = ChatMessage(
+        session_id=session_id,
+        role="assistant",
+        content=assistant_content,
+        tokens_used=tokens_used,
+        tool_calls=tool_call_log or None,
+    )
     db.add(assistant_msg)
     
     # Update quota
@@ -165,7 +204,16 @@ async def send_message(session_id: int, message: ChatMessageCreate, db: Session 
     db.commit()
     db.refresh(assistant_msg)
     
-    return assistant_msg
+    # P2: 返回时附带 search_results（实时，不落库；前端在消息内渲染来源卡片）
+    return {
+        "id": assistant_msg.id,
+        "role": assistant_msg.role,
+        "content": assistant_msg.content,
+        "tokens_used": assistant_msg.tokens_used,
+        "tool_calls": assistant_msg.tool_calls,
+        "search_results": search_results,
+        "created_at": assistant_msg.created_at,
+    }
 
 # System Prompt endpoints
 @router.get("/system-prompts", response_model=List[SystemPromptResponse])

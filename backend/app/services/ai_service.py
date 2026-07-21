@@ -6,14 +6,24 @@ from app.models.models import ChatSession, ChatMessage
 settings = get_settings()
 
 
-async def chat_with_deepseek(messages: list, stream: bool = False):
-    """Call DeepSeek API"""
+async def chat_with_deepseek(messages: list, stream: bool = False, tools=None, tool_choice=None):
+    """Call DeepSeek API（OpenAI 兼容协议，支持 function calling）。
+
+    Args:
+        messages: OpenAI 格式的消息列表。
+        stream: 是否流式（当前项目未启用流式渲染）。
+        tools: OpenAI function calling 的 tools 数组；传入即开启工具调用。
+        tool_choice: 工具选择策略，默认 "auto"（仅当 tools 非空时生效）。
+    """
     headers = {
         "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
         "Content-Type": "application/json",
     }
 
     payload = {"model": settings.DEEPSEEK_MODEL, "messages": messages, "stream": stream}
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = tool_choice or "auto"
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
