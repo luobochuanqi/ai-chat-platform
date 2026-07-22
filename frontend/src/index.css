@@ -3,10 +3,66 @@
 @tailwind utilities;
 
 @layer base {
-  html {
-    @apply antialiased;
+  :root {
+    /* catppuccin Latte 单一配色来源（tailwind token 与 shadcn 共用） */
+    --base: #EFF1F5;
+    --mantle: #E6E9EF;
+    --crust: #DCE0E8;
+    --surface0: #CCD0DA;
+    --ctext: #4C4F69;
+    --subtext1: #5C5F77;
+    --subtext0: #6C6F85;
+    --mauve: #8839EF;
+    --peach: #FE640B;
+    --green: #40A02B;
+    --red: #D20F39;
+
+    /* shadcn 语义变量（hsl 通道值，tailwind 用 hsl(var(--x))） */
+    --background: 231 24% 95%;       /* base #EFF1F5 */
+    --foreground: 234 23% 28%;       /* ctext #4C4F69 */
+    --primary: 263 84% 58%;          /* mauve #8839EF */
+    --primary-foreground: 231 24% 95%;
+    --secondary: 223 16% 86%;        /* surface0 #CCD0DA */
+    --secondary-foreground: 234 23% 28%;
+    --muted: 223 16% 91%;            /* mantle #E6E9EF */
+    --muted-foreground: 231 12% 40%; /* subtext0 */
+    --border: 225 18% 89%;           /* crust #DCE0E8 */
+    --input: 225 18% 89%;
+    --ring: 263 84% 58%;
+    --radius: 0.3rem;
   }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
   body {
-    @apply bg-zinc-50 text-zinc-900;
+    background-color: var(--base);
+    color: var(--ctext);
+    font-family: 'LXGW WenKai', system-ui, sans-serif;
+  }
+
+  /* 纸纹 noise：编辑纸感的核心质感（极淡，干净不脏，不抢戏）。
+     替代之前的彩色 mesh gradient（那是 AI slop）。 */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.035;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* 全局键盘焦点样式（a11y, WCAG 2.4.7） */
+  :focus-visible {
+    outline: 2px solid var(--mauve);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: #8839EF;
+    color: #EFF1F5;
   }
 }

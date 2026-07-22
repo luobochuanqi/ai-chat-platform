@@ -50,6 +50,8 @@ class ChatMessageResponse(BaseModel):
     role: str
     content: str
     tokens_used: Optional[int] = None
+    tool_calls: Optional[List] = None
+    search_results: Optional[List[dict]] = None  # P2: 联网搜索结果，实时返回不落库
     created_at: datetime
     
     class Config:
@@ -58,6 +60,13 @@ class ChatMessageResponse(BaseModel):
 class ChatSessionCreate(BaseModel):
     title: Optional[str] = "新会话"
     system_prompt: Optional[str] = None
+    enabled_skills: Optional[List[str]] = None
+
+class SessionUpdate(BaseModel):
+    """会话更新（P2：放开 system_prompt / enabled_skills 可改，不再「创建后不可改」）"""
+    title: Optional[str] = None
+    system_prompt: Optional[str] = None
+    enabled_skills: Optional[List[str]] = None
 
 class ChatSessionResponse(BaseModel):
     id: int
@@ -74,6 +83,7 @@ class ChatSessionDetail(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    enabled_skills: Optional[List[str]] = None
     messages: List[ChatMessageResponse]
     
     class Config:
@@ -88,6 +98,13 @@ class SystemPromptCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
     prompt: str = Field(..., min_length=1)
+
+class PromptCreate(BaseModel):
+    """P4: 市场创建提示词（默认发布到社区）"""
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    prompt: str = Field(..., min_length=1)
+    tags: List[str] = []
 
 class SystemPromptUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
