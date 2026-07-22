@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import api from '../services/api'
 import { AppLayout } from '../components/layout/AppLayout'
 import { MessageBubble } from '../components/chat/MessageBubble'
@@ -38,7 +39,7 @@ const QUICK_STARTS = [
   '写一首关于秋天的小诗',
   '用大白话解释什么是勾股定理',
   '讲一个冷笑话',
-  '帮我算 1234 × 5678 等于多少',
+  '帮我起三个奇幻故事的主角名字',
 ]
 
 export default function ChatPage() {
@@ -51,6 +52,7 @@ export default function ChatPage() {
   const [editingSession, setEditingSession] = useState<number | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [webSearchEnabled, setWebSearchEnabled] = useState(false)
+  const [showSlashMenu, setShowSlashMenu] = useState(false)
 
   // 编辑面板（slide-over）
   const [showSettings, setShowSettings] = useState(false)
@@ -61,6 +63,17 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { loadSessions() }, [])
+
+  // P4: 从市场「用此开聊」跳来时，自动加载该新会话
+  const location = useLocation()
+  useEffect(() => {
+    const sid = (location.state as { newSessionId?: number } | null)?.newSessionId
+    if (sid) {
+      loadSessionMessages(sid)
+      window.history.replaceState({}, document.title)  // 清 state，避免刷新重复加载
+    }
+  }, [location.state])
+
   useEffect(() => { scrollToBottom() }, [messages])
 
   const loadSessions = async () => {
@@ -105,7 +118,7 @@ export default function ChatPage() {
     try {
       const response = await api.post('/chat/sessions', {
         title: '新会话',
-        enabled_skills: SKILLS.map(s => s.name),
+        enabled_skills: [],
       })
       const newSession = response.data
       setSessions([newSession, ...sessions])
@@ -235,6 +248,22 @@ export default function ChatPage() {
     }
   }
 
+  // P3: 对话内 / 选 skill（会话级启用，和设置面板同步）
+  const handleSlashSelect = async (skillName: string) => {
+    if (!currentSession) return
+    const current = currentSessionData?.enabled_skills || []
+    if (!current.includes(skillName)) {
+      try {
+        await api.put(`/chat/sessions/${currentSession}`, { enabled_skills: [...current, skillName] })
+        setCurrentSessionData(prev => prev ? { ...prev, enabled_skills: [...current, skillName] } : prev)
+      } catch (error) {
+        console.error('[Chat] 启用 skill 失败:', error)
+      }
+    }
+    setShowSlashMenu(false)
+    setInput('')
+  }
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -355,14 +384,40 @@ export default function ChatPage() {
                   </button>
                 </div>
                 <div className="flex items-end gap-2">
-                  <textarea
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="输入消息... (Enter 发送，Shift+Enter 换行)"
-                    rows={1}
-                    className="flex-1 px-4 py-3 bg-base border border-surface2 rounded resize-none focus:border-mauve focus:ring-1 focus:ring-mauve outline-none transition min-h-[44px] text-sm"
-                  />
+                  <div className="flex-1 relative">
+                    {showSlashMenu && (
+                      <div className="absolute bottom-full mb-2 left-0 w-64 bg-base border border-surface2 rounded shadow-lg overflow-hidden">
+                        <div className="px-3 py-2 text-xs text-subtext0 border-b border-surface2">选择技能（会话启用）</div>
+                        {SKILLS.map(skill => {
+                          const Icon = skill.icon
+                          const active = currentSessionData?.enabled_skills?.includes(skill.name)
+                          return (
+                            <button
+                              key={skill.name}
+                              onClick={() => handleSlashSelect(skill.name)}
+                              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface0 text-left transition"
+                            >
+                              <Icon className={`w-4 h-4 ${skill.colorClass}`} />
+                              <span className="text-sm text-ctext">{skill.label}</span>
+                              {active && <span className="ml-auto text-xs text-green">已启用</span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                    <textarea
+                      value={input}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setInput(v)
+                        setShowSlashMenu(v.startsWith('/') && !v.includes('\n'))
+                      }}
+                      onKeyDown={handleKeyDown}
+                      placeholder="输入消息... (输入 / 选择技能，Enter 发送)"
+                      rows={1}
+                      className="w-full px-4 py-3 bg-base border border-surface2 rounded resize-none focus:border-mauve focus:ring-1 focus:ring-mauve outline-none transition min-h-[44px] text-sm"
+                    />
+                  </div>
                   <motion.button
                     whileHover={{ scale: 1.03 }}
                     whileTap={{ scale: 0.96 }}

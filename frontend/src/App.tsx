@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage'
 import ChatPage from './pages/ChatPage'
 import ImagePage from './pages/ImagePage'
 import GalleryPage from './pages/GalleryPage'
+import PromptsMarketPage from './pages/PromptsMarketPage'
 import AdminPage from './pages/AdminPage'
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
       <Route path="/chat" element={isAuthenticated ? <ChatPage /> : <Navigate to="/login" />} />
       <Route path="/image" element={isAuthenticated ? <ImagePage /> : <Navigate to="/login" />} />
       <Route path="/gallery" element={isAuthenticated ? <GalleryPage /> : <Navigate to="/login" />} />
+      <Route path="/prompts" element={isAuthenticated ? <PromptsMarketPage /> : <Navigate to="/login" />} />
       <Route path="/admin" element={isAuthenticated ? <AdminPage /> : <Navigate to="/login" />} />
       <Route path="/" element={<Navigate to="/chat" />} />
     </Routes>

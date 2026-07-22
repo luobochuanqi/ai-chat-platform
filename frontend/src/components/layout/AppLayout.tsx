@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { path: '/chat', label: 'AI 对话' },
   { path: '/image', label: 'AI 生图' },
   { path: '/gallery', label: '作品墙' },
+  { path: '/prompts', label: '提示词市场' },
   { path: '/admin', label: '管理后台', adminOnly: true },
 ] as const
 

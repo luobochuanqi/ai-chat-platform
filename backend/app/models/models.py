@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, Float, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, Float, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -37,12 +37,16 @@ class ChatSession(Base):
 
 class SystemPrompt(Base):
     __tablename__ = "system_prompts"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     description = Column(String(500), nullable=True)
     prompt = Column(Text, nullable=False)
+    tags = Column(JSON, default=list)  # P4: 标签数组，如 ["写作","学习"]
     is_builtin = Column(Boolean, default=False)
+    is_public = Column(Boolean, default=False)  # P4: 是否发布到社区
+    likes = Column(Integer, default=0)  # P4: 点赞数（冗余计数，排序用）
+    use_count = Column(Integer, default=0)  # P4: 被使用次数（开聊 +1）
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -75,8 +79,19 @@ class GeneratedImage(Base):
 
 class ImageLike(Base):
     __tablename__ = "image_likes"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     image_id = Column(Integer, ForeignKey("generated_images.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PromptLike(Base):
+    """P4: 提示词点赞去重表（user + prompt 唯一）"""
+    __tablename__ = "prompt_likes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    prompt_id = Column(Integer, ForeignKey("system_prompts.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("user_id", "prompt_id", name="unique_user_prompt_like"),)

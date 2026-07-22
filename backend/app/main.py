@@ -5,7 +5,7 @@ import os
 from app.core.database import engine, Base, SessionLocal
 from app.core.security import get_password_hash
 from app.models.models import User, SystemPrompt
-from app.api import users, chat, images, admin
+from app.api import users, chat, images, admin, prompts
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -100,6 +100,7 @@ app.include_router(users.router)
 app.include_router(chat.router)
 app.include_router(images.router)
 app.include_router(admin.router)
+app.include_router(prompts.router)
 
 # Static files for images
 app.mount("/data/images", StaticFiles(directory="./data/images"), name="images")

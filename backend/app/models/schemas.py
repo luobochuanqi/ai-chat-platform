@@ -99,6 +99,13 @@ class SystemPromptCreate(BaseModel):
     description: Optional[str] = Field(None, max_length=500)
     prompt: str = Field(..., min_length=1)
 
+class PromptCreate(BaseModel):
+    """P4: 市场创建提示词（默认发布到社区）"""
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    prompt: str = Field(..., min_length=1)
+    tags: List[str] = []
+
 class SystemPromptUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
