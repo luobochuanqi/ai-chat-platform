@@ -100,7 +100,6 @@ def create_default_prompts():
                     prompt=IMAGE_GEN_ASSISTANT_PROMPT,
                     is_builtin=True,
                     is_active=True,
-                    tags=["生图", "创意"],
                 ),
             ]
             for p in defaults:

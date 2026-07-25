@@ -23,7 +23,7 @@ interface MarketPrompt {
 }
 
 /** 预定义标签（筛选 chips）。可扩展。 */
-const POPULAR_TAGS = ['写作', '学习', '编程', '创意', '翻译', '角色扮演', '生图']
+const POPULAR_TAGS = ['写作', '学习', '编程', '创意', '翻译', '角色扮演']
 
 export default function PromptsMarketPage() {
   const [prompts, setPrompts] = useState<MarketPrompt[]>([])
