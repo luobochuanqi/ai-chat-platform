@@ -20,6 +20,16 @@ class UserUpdate(BaseModel):
 class UserQuotaUpdate(BaseModel):
     chat_quota: Optional[int] = None
     image_quota: Optional[int] = None
+    chat_used: Optional[int] = None
+    image_used: Optional[int] = None
+
+class BatchQuotaUpdate(BaseModel):
+    """批量调整用户额度（管理员）"""
+    user_ids: List[int]
+    chat_quota: Optional[int] = None
+    image_quota: Optional[int] = None
+    chat_used: Optional[int] = None
+    image_used: Optional[int] = None
 
 class UserResponse(BaseModel):
     id: int
@@ -126,7 +136,7 @@ class SystemPromptResponse(BaseModel):
 
 # Image schemas
 class ImageGenerateRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=1000)
+    prompt: str = Field(..., min_length=1, max_length=2000)
 
 class ImageResponse(BaseModel):
     id: int

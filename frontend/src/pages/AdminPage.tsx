@@ -66,6 +66,16 @@ export default function AdminPage() {
   const [promptDesc, setPromptDesc] = useState('')
   const [promptContent, setPromptContent] = useState('')
 
+  // 用户额度管理 state
+  const [selectedUsers, setSelectedUsers] = useState<Set<number>>(new Set())
+  const [batchChatQuota, setBatchChatQuota] = useState('')
+  const [batchImageQuota, setBatchImageQuota] = useState('')
+  const [batchResetUsed, setBatchResetUsed] = useState(false)
+  const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [editChatQuota, setEditChatQuota] = useState('')
+  const [editImageQuota, setEditImageQuota] = useState('')
+  const [editResetUsed, setEditResetUsed] = useState(false)
+
   useEffect(() => {
     if (!user?.is_admin) {
       navigate('/chat')
@@ -79,6 +89,7 @@ export default function AdminPage() {
       if (activeTab === 'users') {
         const response = await api.get('/users/list')
         setUsers(response.data.users)
+        setSelectedUsers(new Set())
       } else if (activeTab === 'images') {
         const response = await api.get('/images/admin/all')
         setImages(response.data)
@@ -139,6 +150,77 @@ export default function AdminPage() {
       loadData()
     } catch (error) {
       console.error('Failed to delete user:', error)
+    }
+  }
+
+  // 用户额度管理 handlers
+  const toggleSelectUser = (userId: number) => {
+    setSelectedUsers(prev => {
+      const next = new Set(prev)
+      if (next.has(userId)) {
+        next.delete(userId)
+      } else {
+        next.add(userId)
+      }
+      return next
+    })
+  }
+
+  const toggleSelectAllUsers = () => {
+    if (selectedUsers.size === users.length) {
+      setSelectedUsers(new Set())
+    } else {
+      setSelectedUsers(new Set(users.map(u => u.id)))
+    }
+  }
+
+  const handleBatchQuota = async () => {
+    if (selectedUsers.size === 0) return
+    const payload: Record<string, number | number[]> = { user_ids: Array.from(selectedUsers) }
+    if (batchChatQuota.trim()) payload.chat_quota = parseInt(batchChatQuota)
+    if (batchImageQuota.trim()) payload.image_quota = parseInt(batchImageQuota)
+    if (batchResetUsed) {
+      payload.chat_used = 0
+      payload.image_used = 0
+    }
+    // 没有任何有效操作则跳过
+    if (payload.chat_quota === undefined && payload.image_quota === undefined && !batchResetUsed) {
+      return
+    }
+    try {
+      await api.post('/users/batch-quota', payload)
+      setSelectedUsers(new Set())
+      setBatchChatQuota('')
+      setBatchImageQuota('')
+      setBatchResetUsed(false)
+      loadData()
+    } catch (error) {
+      console.error('[AdminPage] 批量更新额度失败:', error)
+    }
+  }
+
+  const openEditUser = (u: User) => {
+    setEditingUser(u)
+    setEditChatQuota(String(u.chat_quota))
+    setEditImageQuota(String(u.image_quota))
+    setEditResetUsed(false)
+  }
+
+  const handleSaveUserQuota = async () => {
+    if (!editingUser) return
+    const payload: Record<string, number> = {}
+    if (editChatQuota.trim()) payload.chat_quota = parseInt(editChatQuota)
+    if (editImageQuota.trim()) payload.image_quota = parseInt(editImageQuota)
+    if (editResetUsed) {
+      payload.chat_used = 0
+      payload.image_used = 0
+    }
+    try {
+      await api.put(`/users/${editingUser.id}/quota`, payload)
+      setEditingUser(null)
+      loadData()
+    } catch (error) {
+      console.error('[AdminPage] 更新用户额度失败:', error)
     }
   }
 
@@ -363,13 +445,69 @@ export default function AdminPage() {
               
               {/* User List */}
               <div className="bg-base rounded border border-surface2 overflow-hidden">
-                <div className="p-4 border-b border-surface2">
+                <div className="p-4 border-b border-surface2 flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-ctext">用户列表</h3>
+                  {selectedUsers.size > 0 && (
+                    <span className="text-sm text-subtext1">已选 {selectedUsers.size} 人</span>
+                  )}
                 </div>
+
+                {/* 批量操作栏（选中用户时显示） */}
+                {selectedUsers.size > 0 && (
+                  <div className="p-4 bg-mantle border-b border-surface2">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <span className="text-sm font-medium text-ctext">批量操作:</span>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-subtext1">对话额度设为</label>
+                        <input
+                          type="number"
+                          value={batchChatQuota}
+                          onChange={(e) => setBatchChatQuota(e.target.value)}
+                          placeholder="留空不改"
+                          className="w-24 px-2 py-1 border border-surface2 rounded text-sm focus:border-mauve focus:ring-1 focus:ring-mauve outline-none"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-subtext1">生图额度设为</label>
+                        <input
+                          type="number"
+                          value={batchImageQuota}
+                          onChange={(e) => setBatchImageQuota(e.target.value)}
+                          placeholder="留空不改"
+                          className="w-24 px-2 py-1 border border-surface2 rounded text-sm focus:border-mauve focus:ring-1 focus:ring-mauve outline-none"
+                        />
+                      </div>
+                      <label className="flex items-center gap-1.5 text-sm text-subtext1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={batchResetUsed}
+                          onChange={(e) => setBatchResetUsed(e.target.checked)}
+                          className="cursor-pointer"
+                        />
+                        重置已用量
+                      </label>
+                      <button
+                        onClick={handleBatchQuota}
+                        className="px-4 py-1.5 bg-mauve text-base rounded text-sm hover:bg-mauve/90 transition"
+                      >
+                        批量应用
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead className="bg-mantle">
                       <tr>
+                        <th className="px-4 py-3 w-10">
+                          <input
+                            type="checkbox"
+                            checked={selectedUsers.size > 0 && selectedUsers.size === users.length}
+                            onChange={toggleSelectAllUsers}
+                            className="cursor-pointer"
+                          />
+                        </th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-subtext1">用户名</th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-subtext1">昵称</th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-subtext1">对话额度</th>
@@ -380,7 +518,15 @@ export default function AdminPage() {
                     </thead>
                     <tbody className="divide-y divide-surface2">
                       {users.map((u) => (
-                        <tr key={u.id}>
+                        <tr key={u.id} className={selectedUsers.has(u.id) ? 'bg-mauve/5' : ''}>
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedUsers.has(u.id)}
+                              onChange={() => toggleSelectUser(u.id)}
+                              className="cursor-pointer"
+                            />
+                          </td>
                           <td className="px-4 py-3 text-sm text-ctext">{u.username}</td>
                           <td className="px-4 py-3 text-sm text-subtext1">{u.nickname}</td>
                           <td className="px-4 py-3 text-sm text-subtext1">
@@ -396,10 +542,16 @@ export default function AdminPage() {
                               {u.is_active ? '启用' : '禁用'}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-sm">
+                          <td className="px-4 py-3 text-sm whitespace-nowrap">
+                            <button
+                              onClick={() => openEditUser(u)}
+                              className="text-mauve hover:text-mauve mr-3"
+                            >
+                              编辑
+                            </button>
                             <button
                               onClick={() => handleToggleUser(u.id)}
-                              className="text-mauve hover:text-mauve mr-3"
+                              className="text-subtext1 hover:text-ctext mr-3"
                             >
                               {u.is_active ? '禁用' : '启用'}
                             </button>
@@ -416,6 +568,69 @@ export default function AdminPage() {
                   </table>
                 </div>
               </div>
+
+              {/* 单用户额度编辑弹窗 */}
+              {editingUser && (
+                <div
+                  className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+                  onClick={() => setEditingUser(null)}
+                >
+                  <div
+                    className="bg-base rounded-lg border border-surface2 p-6 w-96 max-w-[90vw]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <h3 className="text-lg font-semibold text-ctext mb-1">编辑额度</h3>
+                    <p className="text-sm text-subtext0 mb-4">
+                      {editingUser.nickname}（{editingUser.username}）
+                    </p>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm text-subtext1 mb-1">对话额度上限</label>
+                        <input
+                          type="number"
+                          value={editChatQuota}
+                          onChange={(e) => setEditChatQuota(e.target.value)}
+                          className="w-full px-3 py-2 border border-surface2 rounded-lg focus:border-mauve focus:ring-1 focus:ring-mauve outline-none"
+                        />
+                        <p className="text-xs text-overlay0 mt-1">当前已用: {editingUser.chat_used}</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm text-subtext1 mb-1">生图额度上限</label>
+                        <input
+                          type="number"
+                          value={editImageQuota}
+                          onChange={(e) => setEditImageQuota(e.target.value)}
+                          className="w-full px-3 py-2 border border-surface2 rounded-lg focus:border-mauve focus:ring-1 focus:ring-mauve outline-none"
+                        />
+                        <p className="text-xs text-overlay0 mt-1">当前已用: {editingUser.image_used}</p>
+                      </div>
+                      <label className="flex items-center gap-2 text-sm text-subtext1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={editResetUsed}
+                          onChange={(e) => setEditResetUsed(e.target.checked)}
+                          className="cursor-pointer"
+                        />
+                        重置已用量（把 used 清零）
+                      </label>
+                    </div>
+                    <div className="flex justify-end gap-2 mt-6">
+                      <button
+                        onClick={() => setEditingUser(null)}
+                        className="px-4 py-2 text-subtext1 hover:bg-surface0 rounded-lg transition"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={handleSaveUserQuota}
+                        className="px-4 py-2 bg-mauve text-base rounded-lg hover:bg-mauve/90 transition"
+                      >
+                        保存
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           
