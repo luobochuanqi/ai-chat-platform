@@ -10,6 +10,7 @@ from app.core.database import engine, Base, SessionLocal
 from app.core.security import get_password_hash
 from app.models.models import User, SystemPrompt
 from app.api import users, chat, images, admin, prompts
+from app.prompts.image_gen_assistant import IMAGE_GEN_ASSISTANT_PROMPT
 
 # 日志初始化（尽早执行，确保后续模块的 getLogger 输出到统一格式）
 settings = get_settings()
@@ -62,42 +63,53 @@ def create_default_admin():
 def create_default_prompts():
     db = SessionLocal()
     try:
-        existing = db.query(SystemPrompt).filter(SystemPrompt.is_builtin == True).first()
-        if not existing:
-            defaults = [
-                SystemPrompt(
-                    name="通用助手",
-                    description="通用的AI助手，能回答各种问题",
-                    prompt="你是一个有用且友好的AI助手。请用简洁清晰的中文回答问题，适当使用Markdown格式。",
+        defaults = [
+            {
+                "name": "通用助手",
+                "description": "通用的AI助手，能回答各种问题",
+                "prompt": "你是一个有用且友好的AI助手。请用简洁清晰的中文回答问题，适当使用Markdown格式。",
+            },
+            {
+                "name": "编程导师",
+                "description": "擅长编程的AI导师，可以帮你写代码、debug、解释概念",
+                "prompt": "你是一个经验丰富的编程导师。请用中文回答，代码注释用英文或中文。解释代码逻辑时请详细说明，提供最佳实践建议。代码块请用Markdown代码块格式。",
+            },
+            {
+                "name": "创意写作",
+                "description": "擅长创意写作的AI，可以帮你写故事、诗歌、文案",
+                "prompt": "你是一位富有创意的写作助手。请用优美的中文写作，注重文采和创意。可以写故事、诗歌、文案等。回复时保持文学性和趣味性。",
+            },
+            {
+                "name": "学习辅导",
+                "description": "面向初中生的学习辅导AI",
+                "prompt": "你是一位耐心细致的学习辅导老师，面向初中生。请用简单易懂的语言解释知识点，多举例说明。鼓励学生思考，引导他们自己找到答案，而不是直接给出答案。",
+            },
+            {
+                "name": "生图提示词助教",
+                "description": "帮你一步步完善AI生图提示词，从主体到光影，让画面更出彩",
+                "prompt": IMAGE_GEN_ASSISTANT_PROMPT,
+            },
+        ]
+        created = 0
+        for p_data in defaults:
+            existing = db.query(SystemPrompt).filter(
+                SystemPrompt.name == p_data["name"],
+                SystemPrompt.is_builtin == True,
+            ).first()
+            if not existing:
+                db.add(SystemPrompt(
+                    name=p_data["name"],
+                    description=p_data["description"],
+                    prompt=p_data["prompt"],
                     is_builtin=True,
-                    is_active=True
-                ),
-                SystemPrompt(
-                    name="编程导师",
-                    description="擅长编程的AI导师，可以帮你写代码、debug、解释概念",
-                    prompt="你是一个经验丰富的编程导师。请用中文回答，代码注释用英文或中文。解释代码逻辑时请详细说明，提供最佳实践建议。代码块请用Markdown代码块格式。",
-                    is_builtin=True,
-                    is_active=True
-                ),
-                SystemPrompt(
-                    name="创意写作",
-                    description="擅长创意写作的AI，可以帮你写故事、诗歌、文案",
-                    prompt="你是一位富有创意的写作助手。请用优美的中文写作，注重文采和创意。可以写故事、诗歌、文案等。回复时保持文学性和趣味性。",
-                    is_builtin=True,
-                    is_active=True
-                ),
-                SystemPrompt(
-                    name="学习辅导",
-                    description="面向初中生的学习辅导AI",
-                    prompt="你是一位耐心细致的学习辅导老师，面向初中生。请用简单易懂的语言解释知识点，多举例说明。鼓励学生思考，引导他们自己找到答案，而不是直接给出答案。",
-                    is_builtin=True,
-                    is_active=True
-                ),
-            ]
-            for p in defaults:
-                db.add(p)
+                    is_active=True,
+                ))
+                created += 1
+        if created > 0:
             db.commit()
-            logger.info("Created %d default system prompts", len(defaults))
+            logger.info("Created %d new built-in system prompts", created)
+        else:
+            logger.info("All %d built-in system prompts already exist", len(defaults))
     except Exception as e:
         logger.error("Error creating default prompts: %s", e)
     finally:
