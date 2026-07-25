@@ -10,6 +10,7 @@ from app.core.database import engine, Base, SessionLocal
 from app.core.security import get_password_hash
 from app.models.models import User, SystemPrompt
 from app.api import users, chat, images, admin, prompts
+from app.prompts.image_gen_assistant import IMAGE_GEN_ASSISTANT_PROMPT
 
 # 日志初始化（尽早执行，确保后续模块的 getLogger 输出到统一格式）
 settings = get_settings()
@@ -92,6 +93,14 @@ def create_default_prompts():
                     prompt="你是一位耐心细致的学习辅导老师，面向初中生。请用简单易懂的语言解释知识点，多举例说明。鼓励学生思考，引导他们自己找到答案，而不是直接给出答案。",
                     is_builtin=True,
                     is_active=True
+                ),
+                SystemPrompt(
+                    name="生图提示词助教",
+                    description="帮你一步步完善AI生图提示词，从主体到光影，让画面更出彩",
+                    prompt=IMAGE_GEN_ASSISTANT_PROMPT,
+                    is_builtin=True,
+                    is_active=True,
+                    tags=["生图", "创意"],
                 ),
             ]
             for p in defaults:
