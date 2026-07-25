@@ -1,11 +1,33 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 import os
+import logging
+import uuid
+from app.core.config import get_settings
 from app.core.database import engine, Base, SessionLocal
 from app.core.security import get_password_hash
 from app.models.models import User, SystemPrompt
 from app.api import users, chat, images, admin, prompts
+
+# 日志初始化（尽早执行，确保后续模块的 getLogger 输出到统一格式）
+settings = get_settings()
+logging.basicConfig(
+    level=settings.LOG_LEVEL,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+# 生产环境日志落盘（设 LOG_FILE 环境变量启用，如 /app/data/logs/app.log）
+if settings.LOG_FILE:
+    os.makedirs(os.path.dirname(settings.LOG_FILE), exist_ok=True)
+    fh = logging.FileHandler(settings.LOG_FILE, encoding="utf-8")
+    fh.setLevel(settings.LOG_LEVEL)
+    fh.setFormatter(logging.root.handlers[0].formatter)
+    logging.root.addHandler(fh)
+    logger.info("日志文件已启用: %s", settings.LOG_FILE)
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -30,9 +52,9 @@ def create_default_admin():
             )
             db.add(admin_user)
             db.commit()
-            print("Default admin created: admin / admin123")
+            logger.info("Default admin created: admin / admin123")
     except Exception as e:
-        print(f"Error creating default admin: {e}")
+        logger.error("Error creating default admin: %s", e)
     finally:
         db.close()
 
@@ -75,9 +97,9 @@ def create_default_prompts():
             for p in defaults:
                 db.add(p)
             db.commit()
-            print(f"Created {len(defaults)} default system prompts")
+            logger.info("Created %d default system prompts", len(defaults))
     except Exception as e:
-        print(f"Error creating default prompts: {e}")
+        logger.error("Error creating default prompts: %s", e)
     finally:
         db.close()
 
@@ -112,3 +134,15 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request, exc):
+    """全局异常兜底：记录完整 traceback + traceId，前端只收友好文案（不泄漏内部细节）"""
+    trace_id = uuid.uuid4().hex[:8]
+    logger.exception("[trace_id=%s] 未处理异常 path=%s method=%s",
+                     trace_id, request.url.path, request.method)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"服务器内部错误（trace_id: {trace_id}）"},
+    )
