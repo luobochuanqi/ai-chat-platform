@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 import httpx
+import logging
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_current_admin
 from app.core.config import get_settings
@@ -14,6 +15,7 @@ import re
 
 router = APIRouter(prefix="/images", tags=["images"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def _get_full_image_url(image_path: str) -> str:
@@ -89,7 +91,8 @@ async def generate_image(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Image generation error: {str(e)}")
+        logger.exception("生图失败 user_id=%d prompt长度=%d", current_user.id, len(request.prompt))
+        raise HTTPException(status_code=500, detail="图片生成失败，请稍后重试")
 
 
 @router.get("/gallery", response_model=List[ImageResponse])

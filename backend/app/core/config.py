@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # DeepSeek API
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_API_BASE: str = "https://api.deepseek.com/v1"
-    DEEPSEEK_MODEL: str = "deepseek-chat"  # flash model
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
     
     # Seedream API
     SEEDREAM_API_KEY: str = ""
@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # Quota defaults
     DEFAULT_CHAT_QUOTA: int = 200
     DEFAULT_IMAGE_QUOTA: int = 50
+
+    # Logging
+    LOG_LEVEL: str = "INFO"
+    LOG_FILE: str = ""  # 空=仅 stderr（Docker logs），设为路径则写入文件。推荐: /app/data/logs/app.log
     
     # File storage
     UPLOAD_DIR: str = "./data/images"

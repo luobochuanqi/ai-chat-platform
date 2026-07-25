@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
+import logging
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_current_admin
 from app.models.schemas import *
@@ -8,6 +9,8 @@ from app.models.models import ChatSession, ChatMessage, User, SystemPrompt
 from app.services.ai_service import chat_with_deepseek
 from app.services.skill_runner import run_chat_with_skills
 from app.skills import SKILL_REGISTRY
+
+logger = logging.getLogger(__name__)
 
 try:
     from duckduckgo_search import DDGS
@@ -127,7 +130,7 @@ async def generate_session_title(request: GenerateTitleRequest, db: Session = De
         db.commit()
         return {"title": title}
     except Exception as e:
-        print(f"Title generation error: {e}")
+        logger.warning("标题生成失败 session_id=%s: %s", request.session_id, e, exc_info=True)
         return {"title": "新会话"}
 
 @router.post("/sessions/{session_id}/messages", response_model=ChatMessageResponse)
@@ -172,9 +175,9 @@ async def send_message(session_id: int, message: ChatMessageCreate, db: Session 
                     ])
                     messages[-1]["content"] = f"{message.content}\n\n以下是我搜索到的相关信息：\n{search_text}\n\n请根据以上信息回答我的问题。"
         except Exception as e:
-            print(f"Web search error: {e}")
+            logger.warning("Web搜索失败 session_id=%s user_id=%s: %s", session_id, current_user.id, e, exc_info=True)
     elif message.web_search and not DDGS_AVAILABLE:
-        print("Web search requested but duckduckgo_search not available")
+        logger.warning("Web搜索请求但duckduckgo_search不可用 session_id=%s", session_id)
     
     # Call DeepSeek API：启用 skills 时走 function-calling 循环，否则保持原路径（教学顺序不被破坏）
     enabled_skills = session.enabled_skills or []
@@ -187,7 +190,8 @@ async def send_message(session_id: int, message: ChatMessageCreate, db: Session 
             assistant_content = response["choices"][0]["message"]["content"]
             tokens_used = response.get("usage", {}).get("total_tokens", 0)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI service error: {str(e)}")
+        logger.exception("AI调用失败 session_id=%d user_id=%d", session_id, current_user.id)
+        raise HTTPException(status_code=500, detail="AI 服务暂时不可用，请稍后重试")
 
     # Save assistant message with token count (and skill call log if any)
     assistant_msg = ChatMessage(
