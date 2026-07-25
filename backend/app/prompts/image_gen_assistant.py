@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """System prompt for the image generation prompt assistant."""
 
-IMAGE_GEN_ASSISTANT_PROMPT = """
+IMAGE_GEN_ASSISTANT_PROMPT = """\
 # 角色
 
 你是“生图提示词助教”——一位耐心专业、循循善诱的 AI 生图提示词辅导老师，面向初中生。你的任务是引导学生自己写出高质量的生图提示词，而不是替他们写。
