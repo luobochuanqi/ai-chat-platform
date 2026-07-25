@@ -4,6 +4,8 @@ import { AppLayout } from '../components/layout/AppLayout'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
 import { Zoom } from 'yet-another-react-lightbox/plugins'
+import Captions from 'yet-another-react-lightbox/plugins/captions'
+import 'yet-another-react-lightbox/plugins/captions.css'
 import { Heart, ImageOff } from 'lucide-react'
 
 type SortOption = 'newest' | 'oldest' | 'most_liked'
@@ -24,6 +26,7 @@ export default function GalleryPage() {
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(0)
+  const [expandedPrompts, setExpandedPrompts] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     loadGallery()
@@ -71,10 +74,23 @@ export default function GalleryPage() {
     setLightboxOpen(true)
   }
 
+  const togglePromptExpand = (id: number) => {
+    setExpandedPrompts(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
   const lightboxSlides = sortedImages.map(img => ({
     src: img.image_url,
     alt: img.prompt,
-    title: img.prompt,
+    title: img.user_nickname,
+    description: img.prompt,
   }))
 
   return (
@@ -125,7 +141,13 @@ export default function GalleryPage() {
                     />
                   </div>
                   <div className="p-3">
-                    <p className="text-sm text-subtext1 line-clamp-2 mb-2">{image.prompt}</p>
+                    <p
+                      className={`text-sm text-subtext1 mb-2 cursor-pointer hover:text-ctext transition ${expandedPrompts.has(image.id) ? '' : 'line-clamp-2'}`}
+                      onClick={(e) => { e.stopPropagation(); togglePromptExpand(image.id) }}
+                      title="点击展开/收起完整提示词"
+                    >
+                      {image.prompt}
+                    </p>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-full bg-mauve/15 flex items-center justify-center">
@@ -167,7 +189,7 @@ export default function GalleryPage() {
         close={() => setLightboxOpen(false)}
         slides={lightboxSlides}
         index={lightboxIndex}
-        plugins={[Zoom]}
+        plugins={[Zoom, Captions]}
         zoom={{ maxZoomPixelRatio: 3 }}
       />
     </AppLayout>

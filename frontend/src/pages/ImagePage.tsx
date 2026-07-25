@@ -5,6 +5,8 @@ import { AppLayout } from '../components/layout/AppLayout'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
 import { Zoom } from 'yet-another-react-lightbox/plugins'
+import Captions from 'yet-another-react-lightbox/plugins/captions'
+import 'yet-another-react-lightbox/plugins/captions.css'
 import { Loader2, ImageIcon, Wand2, Eye, EyeOff } from 'lucide-react'
 
 interface GeneratedImage {
@@ -16,22 +18,8 @@ interface GeneratedImage {
   created_at: string
 }
 
-function truncatePrompt(prompt: string): string {
-  // Count Chinese characters and English characters differently
-  let count = 0
-  let result = ''
-  for (const char of prompt) {
-    if (/[一-龥]/.test(char)) {
-      if (count + 2 > 300) break
-      count += 2
-    } else {
-      if (count + 1 > 500) break
-      count += 1
-    }
-    result += char
-  }
-  return result
-}
+/** 提示词最大长度（与后端 ImageGenerateRequest.max_length 对齐） */
+const PROMPT_MAX_LENGTH = 2000
 
 export default function ImagePage() {
   const { user } = useAuthStore()
@@ -41,7 +29,7 @@ export default function ImagePage() {
   const [error, setError] = useState('')
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(0)
-  const [isTruncated, setIsTruncated] = useState(false)
+  const [expandedPrompts, setExpandedPrompts] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     loadMyImages()
@@ -57,9 +45,7 @@ export default function ImagePage() {
   }
 
   const handlePromptChange = (value: string) => {
-    const truncated = truncatePrompt(value)
-    setPrompt(truncated)
-    setIsTruncated(truncated.length < value.length)
+    setPrompt(value)
   }
 
   const handleGenerate = async () => {
@@ -71,7 +57,6 @@ export default function ImagePage() {
       const response = await api.post('/images/generate', { prompt: prompt.trim() })
       setImages([response.data, ...images])
       setPrompt('')
-      setIsTruncated(false)
     } catch (err: any) {
       const detail = err.response?.data?.detail
       if (typeof detail === 'string') {
@@ -101,10 +86,24 @@ export default function ImagePage() {
   const lightboxSlides = images.map(img => ({
     src: img.image_url,
     alt: img.prompt,
-    title: img.prompt,
+    description: img.prompt,
   }))
 
   const remainingQuota = (user?.image_quota ?? 0) - (user?.image_used ?? 0)
+
+  const isOverLimit = prompt.length > PROMPT_MAX_LENGTH
+
+  const togglePromptExpand = (id: number) => {
+    setExpandedPrompts(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
 
   return (
     <AppLayout>
@@ -123,24 +122,33 @@ export default function ImagePage() {
         <div className="p-4 bg-base border-b border-surface2">
           <div className="max-w-4xl mx-auto">
             <div className="flex items-end gap-2">
-              <div className="flex-1 relative">
+              <div className="flex-1">
                 <textarea
                   value={prompt}
                   onChange={(e) => handlePromptChange(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="描述你想要生成的图片... (例如：一只可爱的猫咪在草地上玩耍)"
-                  rows={2}
-                  className="w-full px-4 py-3 border border-surface2 rounded resize-none focus:border-mauve focus:ring-1 focus:ring-mauve outline-none transition"
+                  placeholder="描述你想要生成的图片... 例如：一只橘猫蹲在窗台上，窗外是雨后的城市夜景，霓虹灯光倒映在玻璃上，毛发蓬松，电影感构图"
+                  rows={8}
+                  className="w-full px-4 py-3 border border-surface2 rounded-lg resize-y focus:border-mauve focus:ring-1 focus:ring-mauve outline-none transition"
                 />
-                {isTruncated && (
-                  <p className="text-yellow text-xs mt-1">
-                    提示词已自动截断至长度限制
-                  </p>
-                )}
+                <div className="flex items-center justify-between mt-1 px-1">
+                  {isOverLimit ? (
+                    <span className="text-red text-xs">
+                      提示词建议不超过 {PROMPT_MAX_LENGTH} 字，请精简后生成
+                    </span>
+                  ) : (
+                    <span className="text-xs text-overlay0">
+                      支持中英文，建议不超过 {PROMPT_MAX_LENGTH} 字
+                    </span>
+                  )}
+                  <span className={`text-xs ${isOverLimit ? 'text-red font-medium' : 'text-subtext0'}`}>
+                    {prompt.length} / {PROMPT_MAX_LENGTH}
+                  </span>
+                </div>
               </div>
               <button
                 onClick={handleGenerate}
-                disabled={loading || !prompt.trim() || remainingQuota <= 0}
+                disabled={loading || !prompt.trim() || remainingQuota <= 0 || isOverLimit}
                 className="px-6 py-3 bg-mauve text-base rounded font-medium hover:bg-mauve/90 transition disabled:opacity-50 flex items-center gap-2"
               >
                 {loading ? (
@@ -195,7 +203,13 @@ export default function ImagePage() {
                       </div>
                     </div>
                     <div className="p-3">
-                      <p className="text-sm text-subtext1 line-clamp-2">{image.prompt}</p>
+                      <p
+                        className={`text-sm text-subtext1 cursor-pointer hover:text-ctext transition ${expandedPrompts.has(image.id) ? '' : 'line-clamp-2'}`}
+                        onClick={(e) => { e.stopPropagation(); togglePromptExpand(image.id) }}
+                        title="点击展开/收起完整提示词"
+                      >
+                        {image.prompt}
+                      </p>
                       <div className="flex items-center justify-between mt-2">
                         <span className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 ${
                           image.is_public
@@ -224,7 +238,7 @@ export default function ImagePage() {
         close={() => setLightboxOpen(false)}
         slides={lightboxSlides}
         index={lightboxIndex}
-        plugins={[Zoom]}
+        plugins={[Zoom, Captions]}
         zoom={{ maxZoomPixelRatio: 3 }}
       />
     </AppLayout>

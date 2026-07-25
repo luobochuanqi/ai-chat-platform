@@ -29,24 +29,6 @@ def _get_full_image_url(image_path: str) -> str:
     return image_path
 
 
-def _truncate_prompt(prompt: str) -> str:
-    """Truncate prompt to 300 Chinese chars or 500 total chars"""
-    chinese_count = 0
-    total = 0
-    result = []
-    for char in prompt:
-        is_chinese = 0x4E00 <= ord(char) <= 0x9FFF
-        if is_chinese and chinese_count >= 300:
-            break
-        if total >= 500:
-            break
-        if is_chinese:
-            chinese_count += 1
-        total += 1
-        result.append(char)
-    return "".join(result)
-
-
 @router.post("/generate", response_model=ImageResponse)
 async def generate_image(
     request: ImageGenerateRequest,
@@ -57,8 +39,7 @@ async def generate_image(
     if current_user.image_used >= current_user.image_quota:
         raise HTTPException(status_code=403, detail="Image generation quota exceeded")
 
-    # Truncate prompt if too long
-    prompt = _truncate_prompt(request.prompt)
+    prompt = request.prompt
 
     try:
         result = await generate_image_seedream(prompt)

@@ -50,7 +50,32 @@ def update_user_quota(user_id: int, quota: UserQuotaUpdate, db: Session = Depend
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return update_user(db, user, {"chat_quota": quota.chat_quota, "image_quota": quota.image_quota})
+    return update_user(db, user, {
+        "chat_quota": quota.chat_quota,
+        "image_quota": quota.image_quota,
+        "chat_used": quota.chat_used,
+        "image_used": quota.image_used,
+    })
+
+@router.post("/batch-quota")
+def batch_update_quota(
+    request: BatchQuotaUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """批量调整用户额度（支持设置上限和重置已用量）"""
+    updated = 0
+    for user_id in request.user_ids:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            update_user(db, user, {
+                "chat_quota": request.chat_quota,
+                "image_quota": request.image_quota,
+                "chat_used": request.chat_used,
+                "image_used": request.image_used,
+            })
+            updated += 1
+    return {"message": f"Updated {updated} users", "updated": updated}
 
 @router.put("/{user_id}/toggle")
 def toggle_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
