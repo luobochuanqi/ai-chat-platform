@@ -105,7 +105,30 @@ def create_default_prompts():
                     is_active=True,
                 ))
                 created += 1
-        if created > 0:
+        # 清理历史重复的 builtin prompts（早期版本每次启动无条件插入导致）
+        from sqlalchemy import func
+        dup_names = (
+            db.query(SystemPrompt.name, func.count(SystemPrompt.id).label("cnt"))
+            .filter(SystemPrompt.is_builtin == True)  # noqa: E712
+            .group_by(SystemPrompt.name)
+            .having(func.count(SystemPrompt.id) > 1)
+            .all()
+        )
+        removed = 0
+        for name, _cnt in dup_names:
+            rows = (
+                db.query(SystemPrompt)
+                .filter(SystemPrompt.name == name, SystemPrompt.is_builtin == True)  # noqa: E712
+                .order_by(SystemPrompt.id)
+                .all()
+            )
+            for dup in rows[1:]:  # 保留最早的一条，删除其余
+                db.delete(dup)
+                removed += 1
+        if removed > 0:
+            logger.info("Removed %d duplicate built-in prompts", removed)
+
+        if created > 0 or removed > 0:
             db.commit()
             logger.info("Created %d new built-in system prompts", created)
         else:

@@ -93,6 +93,7 @@ class ChatSessionDetail(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    system_prompt: Optional[str] = None
     enabled_skills: Optional[List[str]] = None
     messages: List[ChatMessageResponse]
     

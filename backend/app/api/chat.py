@@ -68,6 +68,7 @@ def get_session(session_id: int, db: Session = Depends(get_db), current_user: Us
         "title": session.title,
         "created_at": session.created_at,
         "updated_at": session.updated_at,
+        "system_prompt": session.system_prompt,
         "enabled_skills": session.enabled_skills or [],
         "messages": messages
     }
