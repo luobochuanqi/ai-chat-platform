@@ -11,6 +11,9 @@ from app.core.security import get_password_hash
 from app.models.models import User, SystemPrompt
 from app.api import users, chat, images, admin, prompts
 from app.prompts.image_gen_assistant import IMAGE_GEN_ASSISTANT_PROMPT
+from app.prompts.writing_assistant import WRITING_ASSISTANT_PROMPT
+from app.prompts.subject_tutor import SUBJECT_TUTOR_PROMPT
+from app.prompts.history_roleplay import HISTORY_ROLEPLAY_PROMPT
 
 # 日志初始化（尽早执行，确保后续模块的 getLogger 输出到统一格式）
 settings = get_settings()
@@ -68,43 +71,74 @@ def create_default_prompts():
                 "name": "通用助手",
                 "description": "通用的AI助手，能回答各种问题",
                 "prompt": "你是一个有用且友好的AI助手。请用简洁清晰的中文回答问题，适当使用Markdown格式。",
+                "tags": ["创意"],
             },
             {
                 "name": "编程导师",
                 "description": "擅长编程的AI导师，可以帮你写代码、debug、解释概念",
                 "prompt": "你是一个经验丰富的编程导师。请用中文回答，代码注释用英文或中文。解释代码逻辑时请详细说明，提供最佳实践建议。代码块请用Markdown代码块格式。",
+                "tags": ["编程"],
             },
             {
                 "name": "创意写作",
                 "description": "擅长创意写作的AI，可以帮你写故事、诗歌、文案",
                 "prompt": "你是一位富有创意的写作助手。请用优美的中文写作，注重文采和创意。可以写故事、诗歌、文案等。回复时保持文学性和趣味性。",
+                "tags": ["写作", "创意"],
             },
             {
                 "name": "学习辅导",
                 "description": "面向初中生的学习辅导AI",
                 "prompt": "你是一位耐心细致的学习辅导老师，面向初中生。请用简单易懂的语言解释知识点，多举例说明。鼓励学生思考，引导他们自己找到答案，而不是直接给出答案。",
+                "tags": ["学习"],
             },
             {
                 "name": "生图提示词助教",
                 "description": "帮你一步步完善AI生图提示词，从主体到光影，让画面更出彩",
                 "prompt": IMAGE_GEN_ASSISTANT_PROMPT,
+                "tags": ["创意", "生图"],
+            },
+            {
+                "name": "写作思路点拨助教",
+                "description": "引导你打开写作思路——立意、选材、结构、语言、情感，五维分析逐步推进，只点拨不代写",
+                "prompt": WRITING_ASSISTANT_PROMPT,
+                "tags": ["写作", "学习"],
+            },
+            {
+                "name": "错题讲解导师",
+                "description": "贴一道错题，导师用苏格拉底式提问引导你找错因、回溯知识点、重做、举一反三",
+                "prompt": SUBJECT_TUTOR_PROMPT,
+                "tags": ["学习"],
+            },
+            {
+                "name": "历史人物对话",
+                "description": "和苏轼、李白、爱因斯坦、居里夫人等历史人物对话，第一人称视角让历史活起来",
+                "prompt": HISTORY_ROLEPLAY_PROMPT,
+                "tags": ["创意", "角色扮演", "学习"],
             },
         ]
         created = 0
+        updated = 0
         for p_data in defaults:
             existing = db.query(SystemPrompt).filter(
                 SystemPrompt.name == p_data["name"],
                 SystemPrompt.is_builtin == True,
             ).first()
+            desired_tags = p_data.get("tags", [])
             if not existing:
                 db.add(SystemPrompt(
                     name=p_data["name"],
                     description=p_data["description"],
                     prompt=p_data["prompt"],
+                    tags=desired_tags,
                     is_builtin=True,
                     is_active=True,
                 ))
                 created += 1
+            elif existing.tags != desired_tags:
+                # 已存在的 builtin 若 tags 缺失或过期，补齐（修复历史库无 tags 的问题）
+                existing.tags = desired_tags
+                updated += 1
+
         # 清理历史重复的 builtin prompts（早期版本每次启动无条件插入导致）
         from sqlalchemy import func
         dup_names = (
@@ -125,12 +159,11 @@ def create_default_prompts():
             for dup in rows[1:]:  # 保留最早的一条，删除其余
                 db.delete(dup)
                 removed += 1
-        if removed > 0:
-            logger.info("Removed %d duplicate built-in prompts", removed)
 
-        if created > 0 or removed > 0:
+        if created > 0 or updated > 0 or removed > 0:
             db.commit()
-            logger.info("Created %d new built-in system prompts", created)
+            logger.info("Created %d new, updated tags on %d, removed %d duplicate built-in prompts",
+                        created, updated, removed)
         else:
             logger.info("All %d built-in system prompts already exist", len(defaults))
     except Exception as e:
